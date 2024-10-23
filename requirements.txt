@@ -6,3 +6,5 @@ nltk
 accelerate
 datasets
 pre-commit
+llmlingua
+litserve

@@ -93,8 +93,10 @@ class Validator(ncc.BaseValidator):
         """
         task_config = random.choice(ncc.constants.SYNTHETIC_TASK_CONFIG)
         task_name = task_config["task"]
+        model_name = tier.split(":")[0]
         rewarding_frequency = task_config["rewarding_frequency"]
         groud_truth_synapse = self.challenger(tokenizer, task_name)
+        groud_truth_synapse.target_model = model_name
         synapse = groud_truth_synapse.copy()
         synapse.hide_ground_truth()
         dendrite = bt.dendrite(self.wallet)
@@ -118,7 +120,7 @@ class Validator(ncc.BaseValidator):
                 "requests": [r.deserialize() for r in valid_responses],
                 "ground_truth_request": groud_truth_synapse.deserialize(),
             }
-            payload["ground_truth_request"]["model_name"] = tier.split(":")[0]
+            payload["ground_truth_request"]["model_name"] = model_name
             payload["ground_truth_request"]["criterias"] = task_config["criterias"]
 
             scoring_response = requests.post(

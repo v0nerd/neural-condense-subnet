@@ -22,6 +22,7 @@ class TextCompressProtocol(Synapse):
     context: str = ""
     compressed_tokens: List[List[float]] = []
     expected_completion: str = ""
+    target_model: str = ""
 
     def get_miner_payload(self):
         r"""
@@ -31,6 +32,7 @@ class TextCompressProtocol(Synapse):
         """
         return {
             "context": self.context,
+            "target_model": self.target_model,
         }
 
     def hide_ground_truth(self):
