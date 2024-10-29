@@ -34,9 +34,12 @@ class Validator(ncc.BaseValidator):
             thread.join()
 
     def _forward_tier(self, tier):
-        model_name, tier_name = tier.split(":")
+        supporting_models = ncc.constants.TIER_CONFIG[tier]["supporting_models"]
+        model_name = random.choice(supporting_models)
         tokenizer = AutoTokenizer.from_pretrained(model_name)
-        serving_counter: list = self.miner_manager.serving_counter.get(tier, {})
+        serving_counter: dict[int, ncc.ServingCounter] = (
+            self.miner_manager.serving_counter.get(tier, {})
+        )
         bandwidth = sum([serving_counter[uid].rate_limit for uid in serving_counter])
         bandwidth_to_synthetic = int(
             bandwidth * ncc.constants.RPE_PERCENTAGE_FOR_SYNTHETIC
@@ -47,13 +50,13 @@ class Validator(ncc.BaseValidator):
         else:
             sleep_per_batch = ncc.constants.EPOCH_LENGTH
 
-        log = f"""
-        Tier: {tier}
-        Bandwidth: {bandwidth}
-        Bandwidth to synthetic: {bandwidth_to_synthetic}
-        Number of batches: {n_batch}
-        Sleep per batch: {sleep_per_batch}
-        """
+        log = (
+            f"Tier: {tier}\n"
+            f"Bandwidth: {bandwidth}\n"
+            f"Bandwidth to synthetic: {bandwidth_to_synthetic}\n"
+            f"Number of batches: {n_batch}\n"
+            f"Sleep per batch: {sleep_per_batch}\n"
+        )
         bt.logging.info(log)
 
         query_threads = []
@@ -69,7 +72,8 @@ class Validator(ncc.BaseValidator):
                 continue
 
             thread = threading.Thread(
-                target=self._forward_batch, args=(tier, batched_uids, tokenizer)
+                target=self._forward_batch,
+                args=(tier, model_name, batched_uids, tokenizer),
             )
             query_threads.append(thread)
             thread.start()
@@ -77,7 +81,7 @@ class Validator(ncc.BaseValidator):
             bt.logging.info(f"Sleeping for {sleep_per_batch} seconds.")
             time.sleep(sleep_per_batch)
 
-    def _forward_batch(self, tier, batched_uids, tokenizer):
+    def _forward_batch(self, tier, model_name, batched_uids, tokenizer):
         r"""
         Forward a batch of requests to the miners.
         Args:
@@ -93,31 +97,37 @@ class Validator(ncc.BaseValidator):
         """
         task_config = random.choice(ncc.constants.SYNTHETIC_TASK_CONFIG)
         task_name = task_config["task"]
-        model_name = tier.split(":")[0]
         rewarding_frequency = task_config["rewarding_frequency"]
         groud_truth_synapse = self.challenger(tokenizer, task_name)
         groud_truth_synapse.target_model = model_name
-        synapse = groud_truth_synapse.copy()
+        synapse = groud_truth_synapse.model_copy()
         synapse.hide_ground_truth()
         dendrite = bt.dendrite(self.wallet)
         axons = [self.metagraph.axons[int(uid)] for uid in batched_uids]
-        responses = dendrite.query(
+        responses: list[ncc.TextCompressProtocol] = dendrite.query(
             axons=axons,
             synapse=synapse,
             deserialize=False,
-            timeout=ncc.constants.TIER_CONFIG[tier]["timeout"],
+            timeout=ncc.constants.TIER_CONFIG[tier].timeout,
         )
-        valid_responses = []
-        valid_uids = []
+        valid_responses: list[ncc.TextCompressProtocol] = []
+        valid_uids: list[int] = []
         for uid, response in zip(batched_uids, responses):
-            if response.is_success:
+            if (
+                not response
+                or not response.is_success
+                or (
+                    len(response.compressed_tokens)
+                    > ncc.constants.TIER_CONFIG[tier]["max_condensed_tokens"]
+                )
+            ):
+                self.miner_manager.update_scores([uid], [0])
+            else:
                 valid_responses.append(response)
                 valid_uids.append(uid)
-            else:
-                self.miner_manager.update_scores([uid], [0])
         if valid_responses and random.random() < rewarding_frequency:
             payload = {
-                "requests": [r.deserialize() for r in valid_responses],
+                "miner_responses": [r.deserialize() for r in valid_responses],
                 "ground_truth_request": groud_truth_synapse.deserialize(),
             }
             payload["ground_truth_request"]["model_name"] = model_name
@@ -129,18 +139,14 @@ class Validator(ncc.BaseValidator):
             scoring_response = scoring_response.json()
 
             scores: list[float] = scoring_response["scores"]
-            compress_rates: list[float] = scoring_response["compress_rates"]
 
             factors_list = [
                 {
-                    "normalized_score": score,
+                    "normalized_score_in_batch": score,
                     "process_time/timeout": response.dendrite.process_time
                     / ncc.constants.TIER_CONFIG[tier]["timeout"],
-                    "compress_rate": compress_rate,
                 }
-                for score, response, compress_rate in zip(
-                    scores, valid_responses, compress_rates
-                )
+                for score, response in zip(scores, valid_responses)
             ]
             scores = [
                 ncc.constants.TIER_CONFIG[tier]["scoring_lambda"](factors)
@@ -153,15 +159,10 @@ class Validator(ncc.BaseValidator):
         r"""
         Just normalize the scores and set the weights.
         """
-        self.current_block = self.node_query("System", "Number", [])
-        self.last_update = (
-            self.current_block
-            - self.node_query("SubtensorModule", "LastUpdate", [self.config.netuid])[
-                self.uid
-            ]
-        )
+        self.current_block = self.subtensor.get_current_block()
+        self.last_update = self.metagraph.last_update[self.uid]
         weights: np.ndarray = self.miner_manager.get_normalized_scores()
-        if self.last_update > self.config.tempo + 1:
+        if self.last_update > self.current_block + ncc.constants.SUBNET_TEMPO:
             bt.logging.info(f"Setting weights: {weights}")
             result = self.subtensor.set_weights(
                 netuid=self.netuid,

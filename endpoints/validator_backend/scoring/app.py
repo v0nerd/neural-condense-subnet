@@ -18,11 +18,12 @@ class GroundTruthRequest(BaseModel):
     context: str
     expected_completion: str
     model_name: str
+    max_condensed_tokens: int
     criterias: List[str]
 
 
 class BatchedScoringRequest(BaseModel):
-    requests: List[ScoringRequest]
+    miner_responses: List[ScoringRequest]
     ground_truth_request: GroundTruthRequest
 
 
@@ -66,8 +67,7 @@ def get_scoring(request: BatchedScoringRequest):
         outputs.append(scores)
 
     scores = np.mean(outputs, axis=0)
-    compress_rates = calculate_compress_rate(request)
-    return {"scores": scores, "compress_rates": compress_rates}
+    return {"scores": scores}
 
 
 def calculate_loss_criteria(request: BatchedScoringRequest) -> np.ndarray:
@@ -83,7 +83,7 @@ def calculate_loss_criteria(request: BatchedScoringRequest) -> np.ndarray:
 
     losses = []
 
-    for miner_output in request.requests:
+    for miner_output in request.miner_responses:
         n_compressed_tokens = len(miner_output.compressed_tokens)
         labels = [-52] * n_compressed_tokens + original_labels
         labels = torch.LongTensor(labels).unsqueeze(0).to(MODEL.device)
@@ -115,7 +115,7 @@ def calculate_bleu_criteria(request: BatchedScoringRequest) -> np.ndarray:
     context = request.ground_truth_request.context
     bleu_scores = []
 
-    for miner_output in request.requests:
+    for miner_output in request.miner_responses:
         completions = PIPE(
             context, max_length=64, condensed_tokens=miner_output.compressed_tokens
         )
@@ -134,7 +134,7 @@ def calculate_compress_rate(request: BatchedScoringRequest) -> np.ndarray:
     context = request.ground_truth_request.context
     compress_rates = []
 
-    for miner_output in request.requests:
+    for miner_output in request.miner_responses:
         n_compressed_tokens = len(miner_output.compressed_tokens)
         input_ids = TOKENIZER.encode(
             context,
