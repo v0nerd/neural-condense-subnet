@@ -22,7 +22,7 @@ class Constants(BaseModel):
     TIER_CONFIG: dict[str, TierConfig] = {
         "research": TierConfig(
             incentive_percentage=0.5,
-            requests_per_epoch=10000,
+            requests_per_epoch=100,
             timeout=24,
             scoring_lambda=lambda x: x["normalized_score_in_batch"],
             supporting_models=["mistralai/Mistral-7B-Instruct-v0.2"],
@@ -30,7 +30,7 @@ class Constants(BaseModel):
         ),
         "inference_0": TierConfig(
             incentive_percentage=0.25,
-            requests_per_epoch=200,
+            requests_per_epoch=1024,
             timeout=4,
             scoring_lambda=lambda x: max(
                 0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.4
@@ -40,7 +40,7 @@ class Constants(BaseModel):
         ),
         "inference_1": TierConfig(
             incentive_percentage=0.25,
-            requests_per_epoch=200,
+            requests_per_epoch=1024,
             timeout=4,
             scoring_lambda=lambda x: max(
                 0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.6
