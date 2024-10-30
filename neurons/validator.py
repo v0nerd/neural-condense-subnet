@@ -21,6 +21,7 @@ class Validator(ncc.BaseValidator):
                 config=self.config,
                 metagraph=self.metagraph,
             )
+            bt.logging.info("Starting organic gate.")
 
     def forward(self):
         bt.logging.info("Running epoch.")
@@ -96,8 +97,8 @@ class Validator(ncc.BaseValidator):
         5. Update the scores of the miners with probability rewarding_frequency.
         """
         task_config = random.choice(ncc.constants.SYNTHETIC_TASK_CONFIG)
-        task_name = task_config["task"]
-        rewarding_frequency = task_config["rewarding_frequency"]
+        task_name = task_config.task
+        rewarding_frequency = task_config.rewarding_frequency
         groud_truth_synapse = self.challenger(tokenizer, task_name)
         groud_truth_synapse.target_model = model_name
         synapse = groud_truth_synapse.model_copy()
@@ -131,7 +132,7 @@ class Validator(ncc.BaseValidator):
                 "ground_truth_request": groud_truth_synapse.deserialize(),
             }
             payload["ground_truth_request"]["model_name"] = model_name
-            payload["ground_truth_request"]["criterias"] = task_config["criterias"]
+            payload["ground_truth_request"]["criterias"] = task_config.criterias
 
             scoring_response = requests.post(
                 ncc.constants.SCORING_ENDPOINT, json=payload, timeout=120

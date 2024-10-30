@@ -35,6 +35,7 @@ class Validator(ABC):
                 "validator",
             )
         )
+        print(config)
         os.makedirs(config.full_path, exist_ok=True)
         return config
 

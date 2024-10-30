@@ -12,14 +12,13 @@ from ..constants import constants
 from ..protocol import TextCompressProtocol
 from ..validator_utils import MinerManager
 
-LOGGER = logging.getLogger("organic_gate")
-
 
 class OrganicPayload(pydantic.BaseModel):
-    text_to_compress: str
-    model_name: str
+    context: str
     tier: str
-    uid: int = -1
+    target_model: str
+    miner_uid: int = -1
+    top_incentive: float = 0.9
 
 
 class OrganicResponse(pydantic.BaseModel):
@@ -50,6 +49,12 @@ class OrganicGate:
             methods=["POST"],
             dependencies=[Depends(self.get_self)],
         )
+        self.app.add_api_route(
+            "/health",
+            self.health_check,
+            methods=["GET"],
+            dependencies=[Depends(self.get_self)],
+        )
         self.app.add_middleware(
             TrustedHostMiddleware,
             allowed_hosts=[constants.ORGANIC_CLIENT_URL, "localhost"],
@@ -61,14 +66,15 @@ class OrganicGate:
 
     def register_to_client(self):
         payload = RegisterPayload(port=self.config.validator.gate_port)
-        self.call(self.dendrite, constants.ORGANIC_CLIENT_URL, payload)
+        self.call(constants.ORGANIC_CLIENT_URL, payload, timeout=12)
 
     async def forward(self, request: OrganicPayload):
         synapse = TextCompressProtocol(
-            context=request.text_to_compress,
+            context=request.context,
+            target_model=request.target_model,
         )
-        if request.uid != -1:
-            targeted_uid = request.uid
+        if request.miner_uid != -1:
+            targeted_uid = request.miner_uid
         else:
             for uid, counter in self.miner_manager.serving_counter[
                 request.tier
@@ -98,7 +104,10 @@ class OrganicGate:
     async def get_self(self):
         return self
 
-    async def call(
+    async def health_check(self):
+        return {"status": "healthy"}
+
+    def call(
         self,
         url: str,
         payload: RegisterPayload,
@@ -124,11 +133,12 @@ class OrganicGate:
         headers = {
             "Content-Type": "application/json",
             "message": signature,
-            "hotkey": self.wallet.hotkey.ss58_address,
+            "ss58_address": self.wallet.hotkey.ss58_address,
+            "signature": signature,
         }
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
+        with httpx.Client() as client:
+            response = client.post(
                 url,
                 json=payload.model_dump(),
                 headers=headers,

@@ -14,7 +14,7 @@ class TierConfig(BaseModel):
 
 class SyntheticTaskConfig(BaseModel):
     task: str
-    metrics: List[str]
+    criterias: List[str]
     rewarding_frequency: int
 
 
@@ -52,20 +52,18 @@ class Constants(BaseModel):
         }
     )
 
-    SYNTHETIC_TASK_CONFIG: List[SyntheticTaskConfig] = Field(
-        default_factory=lambda: [
-            {
-                "task": "ae",
-                "metrics": ["loss"],
-                "rewarding_frequency": 1,
-            },
-            {
-                "task": "qa",
-                "metrics": ["bleu"],
-                "rewarding_frequency": 1,
-            },
-        ]
-    )
+    SYNTHETIC_TASK_CONFIG: List[SyntheticTaskConfig] = [
+        SyntheticTaskConfig(
+            task="ae",
+            criterias=["loss"],
+            rewarding_frequency=1,
+        ),
+        SyntheticTaskConfig(
+            task="qa",
+            criterias=["bleu"],
+            rewarding_frequency=1,
+        ),
+    ]
 
     EPOCH_LENGTH: int = 600
     SCORING_PER_MINER_PER_EPOCH: int = 1
@@ -74,11 +72,16 @@ class Constants(BaseModel):
     RPE_PERCENTAGE_FOR_SYNTHETIC: float = 0.5
     BATCH_SIZE: int = 4
     SCORE_MOVING_AVERAGE: float = 0.05
-    ORGANIC_CLIENT_URL: str = "https://ncs-client.condense.ai"
+    ORGANIC_CLIENT_URL: str = "https://ncs-client.condenses.ai"
     SCORING_ENDPOINT: str = os.getenv(
         "SCORING_ENDPOINT", "http://localhost:10000/scoring"
     )
 
 
 constants = Constants()
-print(constants)
+
+if __name__ == "__main__":
+    import rich
+
+    for k, v in constants.model_dump().items():
+        rich.print(f"- {k}: {v}")
