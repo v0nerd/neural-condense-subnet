@@ -146,7 +146,7 @@ class MinerManager:
             ]
             for tier in constants.TIER_CONFIG.keys()
         }
-        tier_group = {}
+        tier_group = {tier: {} for tier in constants.TIER_CONFIG.keys()}
 
         for uid, metadata in self.metadata.items():
             tier = metadata.get("tier", "unknown")

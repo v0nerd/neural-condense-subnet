@@ -40,8 +40,10 @@ class Validator(ABC):
         return config
 
     def setup_logging(self):
-        bt.logging.enable_debug()
-        bt.logging.enable_trace()
+        if self.config.logging.enable_debug:
+            bt.logging.enable_debug()
+        if self.config.logging.enable_trace:
+            bt.logging.enable_trace()
         bt.logging(config=self.config, logging_dir=self.config.full_path)
         bt.logging.info(
             f"Running validator for subnet: {self.config.netuid} on network: {self.config.subtensor.network} with config:"

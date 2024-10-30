@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
+from fastapi.exceptions import HTTPException
 import pydantic
 import asyncio
 import bittensor as bt
@@ -55,24 +56,30 @@ class OrganicGate:
             methods=["GET"],
             dependencies=[Depends(self.get_self)],
         )
-        self.app.add_middleware(
-            TrustedHostMiddleware,
-            allowed_hosts=[constants.ORGANIC_CLIENT_URL, "localhost"],
-        )
         self.loop = asyncio.get_event_loop()
         self.client_axon: bt.AxonInfo = None
+        self.message = "".join(random.choices("0123456789abcdef", k=16))
         self.start_server()
         self.register_to_client()
 
     def register_to_client(self):
         payload = RegisterPayload(port=self.config.validator.gate_port)
-        self.call(constants.ORGANIC_CLIENT_URL, payload, timeout=12)
+        self.call(payload, timeout=12)
 
-    async def forward(self, request: OrganicPayload):
+    def _authenticate(self, request: Request):
+        message = request.headers["message"]
+        if message != self.message:
+            raise Exception("Authentication failed.")
+
+    async def forward(self, request: Request):
+        self._authenticate(request)
+        request: OrganicPayload = OrganicPayload(**await request.json())
         synapse = TextCompressProtocol(
             context=request.context,
             target_model=request.target_model,
         )
+
+        targeted_uid = None
         if request.miner_uid != -1:
             targeted_uid = request.miner_uid
         else:
@@ -82,7 +89,11 @@ class OrganicGate:
                 if counter.increment():
                     targeted_uid = uid
                     break
-
+        if not targeted_uid:
+            raise HTTPException(
+                status_code=503,
+                detail="No miners available.",
+            )
         target_axon = self.metagraph.axons[targeted_uid]
 
         response: TextCompressProtocol = await self.dendrite.forward(
@@ -109,7 +120,6 @@ class OrganicGate:
 
     def call(
         self,
-        url: str,
         payload: RegisterPayload,
         timeout: float = 12.0,
     ) -> bt.Synapse:
@@ -127,12 +137,11 @@ class OrganicGate:
         """
 
         url = f"{constants.ORGANIC_CLIENT_URL}/register"
-        message = "".join(random.choices("0123456789abcdef", k=16)).encode()
-        signature = f"0x{self.dendrite.keypair.sign(message).hex()}"
+        signature = f"0x{self.dendrite.keypair.sign(self.message).hex()}"
 
         headers = {
             "Content-Type": "application/json",
-            "message": signature,
+            "message": self.message,
             "ss58_address": self.wallet.hotkey.ss58_address,
             "signature": signature,
         }
