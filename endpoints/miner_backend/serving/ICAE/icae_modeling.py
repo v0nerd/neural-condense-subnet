@@ -96,6 +96,8 @@ class AdditionalArguments:
 class ICAE(torch.nn.Module):
     def __init__(self, model_args, training_args, lora_config):
         super().__init__()
+        self.device = "cuda"
+        print("Device:", self.device)
         self.model_args = model_args
         self.training_args = training_args
         self.model_name = model_args.model_name_or_path
@@ -104,9 +106,10 @@ class ICAE(torch.nn.Module):
             torch_dtype=(
                 torch.float16 if training_args.bf16 is False else torch.bfloat16
             ),
-            use_flash_attention_2=True,
             resume_download=True,
         )
+        self.icae.to(self.device)
+        print(self.icae)
 
         self.vocab_size = self.icae.config.vocab_size + 1  # [PAD] token
         self.pad_token_id = self.vocab_size - 1
@@ -132,7 +135,8 @@ class ICAE(torch.nn.Module):
         self.dim = self.icae.config.hidden_size
         self.icae = get_peft_model(self.icae, lora_config)
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.icae.to(self.device)
+
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=False)
         self.memory_token_embed = nn.Embedding(
             self.mem_size + 3, self.dim, padding_idx=None
@@ -159,9 +163,9 @@ class ICAE(torch.nn.Module):
         embeddings = self.icae.get_base_model().model.embed_tokens(token_ids)
         special_flags = token_ids >= self.vocab_size
         embeddings[special_flags] = self.memory_token_embed(
-            token_ids[special_flags] - self.vocab_size
+            token_ids[special_flags].to(self.device) - self.vocab_size.to(self.device)
         ).to(
-            embeddings
+            self.device
         )  # replace special token's embedding from self.memory_token_embed
         return embeddings
 
@@ -188,17 +192,21 @@ class ICAE(torch.nn.Module):
                     self.append_sequence.to(self.device),
                 ],
                 dim=1,
-            )
+            ).to(self.device)
             mem_flag = segment_input_ids >= self.vocab_size
-
-            segment_input_embedding = self.icae.get_base_model().model.embed_tokens(
-                segment_input_ids
-            )
+            embed_tokens = self.icae.get_base_model().model.embed_tokens
+            embed_tokens.to(self.device)
+            print(segment_input_ids)
+            print(self.icae.get_base_model().model.embed_tokens.weight)
+            print(embed_tokens.weight)
+            segment_input_embedding = embed_tokens(segment_input_ids)
+            self.memory_token_embed.to(self.device)
             segment_input_embedding[mem_flag] = self.memory_token_embed(
                 segment_input_ids[mem_flag] - self.vocab_size
             ).to(segment_input_embedding)
-
+            segment_input_embedding = segment_input_embedding.to(self.device)
             # compress the current segment
+            self.icae.to(self.device)
             segment_compress_outputs = self.icae(
                 inputs_embeds=segment_input_embedding, output_hidden_states=True
             )

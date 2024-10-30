@@ -88,7 +88,6 @@ def calculate_loss_criteria(request: BatchedScoringRequest) -> np.ndarray:
         labels = [-52] * n_compressed_tokens + original_labels
         labels = torch.LongTensor(labels).unsqueeze(0).to(MODEL.device)
         labels = labels[:, 1:].reshape(-1)
-        n_compressed_tokens = len(miner_output.compressed_tokens)
         input_ids = TOKENIZER.encode(
             context,
             return_tensors="pt",

@@ -3,12 +3,14 @@ import torch
 from tqdm import tqdm
 from transformers import HfArgumentParser, AutoModelForCausalLM
 from peft import LoraConfig
+
 # from modeling_icae_multi_span import ICAE, ModelArguments, DataArguments, TrainingArguments, AdditionalArguments
 from ICAE import ICAE, ModelArguments, TrainingArguments, AdditionalArguments
 import sys
 from safetensors.torch import load_file
 import rich
 import litserve as ls
+
 
 class InferenceLogger(ls.Logger):
     """
@@ -19,19 +21,24 @@ class InferenceLogger(ls.Logger):
     def process(self, key, value):
         rich.print(f"Inference Backend -- {key}: {value}")
 
+
 class Inference(ls.LitAPI):
     def __init__(self, model_args, training_args, lora_config, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         self.model_args = model_args
         self.training_args = training_args
         self.lora_config = lora_config
 
     def setup(self, device):
         self.device = device
-        self.model_compress = ICAE(self.model_args, self.training_args, self.lora_config)
+        self.model_compress = ICAE(
+            self.model_args, self.training_args, self.lora_config
+        )
         state_dict = load_file(self.training_args.output_dir)
-        self.model_compress.load_state_dict(state_dict, strict=False)  # only load lora and memory token embeddings
+        self.model_compress.load_state_dict(
+            state_dict, strict=False
+        )  # only load lora and memory token embeddings
         self.model_compress = self.model_compress.to(self.device)
 
     @torch.no_grad()
@@ -60,14 +67,23 @@ class Inference(ls.LitAPI):
         """
         context = request["context"]
         target_model = request["target_model"]
-        tokenized_input = self.model_compress.tokenizer(context, truncation=True, max_length=5120, padding=False, return_attention_mask=False)
-        input_ids = torch.LongTensor([tokenized_input['input_ids']]).to(self.device)
+        tokenized_input = self.model_compress.tokenizer(
+            context,
+            truncation=True,
+            max_length=5120,
+            padding=False,
+            return_attention_mask=False,
+        )
+        input_ids = torch.LongTensor([tokenized_input["input_ids"]]).to(self.device)
         memory_slots = self.model_compress._compress(input_ids)
 
-        self.log("Predict",f"Compress token length {len(memory_slots)} shape{memory_slots.shape}")
+        self.log(
+            "Predict",
+            f"Compress token length {len(memory_slots)} shape{memory_slots.shape}",
+        )
 
         return {
-            "compressed_context": memory_slots.tolist(),
+            "compressed_tokens": memory_slots.tolist(),
             "target_model": target_model,
         }
 
@@ -82,9 +98,9 @@ class Inference(ls.LitAPI):
         Returns:
             dict: Embeddings of the compressed tokens as a list.
         """
-        
+
         return prediction
-    
+
 
 if __name__ == "__main__":
     parser = HfArgumentParser((ModelArguments, TrainingArguments, AdditionalArguments))
@@ -94,7 +110,7 @@ if __name__ == "__main__":
         lora_alpha=32,
         lora_dropout=model_args.lora_dropout,
         bias="none",
-        task_type="CAUSAL_LM"
+        task_type="CAUSAL_LM",
     )
 
     inference = Inference(

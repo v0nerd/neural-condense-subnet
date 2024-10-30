@@ -8,3 +8,6 @@ datasets
 pre-commit
 llmlingua
 litserve
+peft
+sentencepiece
+protobuf
