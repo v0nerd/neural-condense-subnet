@@ -5,7 +5,7 @@ import bittensor as bt
 import numpy as np
 from ..common import build_rate_limit
 from ..protocol import Metadata
-from ..constants import TIER_CONFIG, RPE_PERCENTAGE_FOR_SYNTHETIC, SCORE_MOVING_AVERAGE
+from ..constants import constants
 
 
 class ServingCounter:
@@ -25,7 +25,10 @@ class ServingCounter:
         Selects a random step to do score.
         """
         return random.choices(
-            list(range(1, int(self.rate_limit * RPE_PERCENTAGE_FOR_SYNTHETIC))), k=2
+            list(
+                range(1, int(self.rate_limit * constants.RPE_PERCENTAGE_FOR_SYNTHETIC))
+            ),
+            k=2,
         )
 
     def increment(self) -> bool:
@@ -60,8 +63,8 @@ class MinerManager:
         """
         for score, uid in zip(scores, uids):
             self.metadata[uid]["score"] = (
-                SCORE_MOVING_AVERAGE * score
-                + (1 - SCORE_MOVING_AVERAGE) * self.metadata[uid]["score"]
+                constants.SCORE_MOVING_AVERAGE * score
+                + (1 - constants.SCORE_MOVING_AVERAGE) * self.metadata[uid]["score"]
             )
 
     def get_normalized_scores(self, eps: float = 1e-6) -> np.ndarray:
@@ -106,7 +109,7 @@ class MinerManager:
         Synchronizes the metadata and serving counter of miners.
         """
         self.metadata = self._update_metadata()
-        self.serving_counter = self._create_serving_counter()
+        self.serving_counter: dict[int, ServingCounter] = self._create_serving_counter()
 
     def _update_metadata(self):
         r"""
@@ -141,13 +144,13 @@ class MinerManager:
             tier: build_rate_limit(self.metagraph, self.validator.config, tier)[
                 self.validator.uid
             ]
-            for tier in TIER_CONFIG.keys()
+            for tier in constants.TIER_CONFIG.keys()
         }
         tier_group = {}
 
         for uid, metadata in self.metadata.items():
             tier = metadata.get("tier", "unknown")
-            if tier not in TIER_CONFIG:
+            if tier not in constants.TIER_CONFIG:
                 continue
             if tier not in tier_group:
                 tier_group[tier] = {}

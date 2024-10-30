@@ -5,16 +5,17 @@ import bittensor as bt
 import uvicorn
 from concurrent.futures import ThreadPoolExecutor
 import logging
+import random
+import httpx
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from ..constants import ORGANIC_CLIENT_URL, TIER_CONFIG
-from .. import __spec_version__
+from ..constants import constants
 from ..protocol import TextCompressProtocol
 from ..validator_utils import MinerManager
 
 LOGGER = logging.getLogger("organic_gate")
 
 
-class OrganicRequest(pydantic.BaseModel):
+class OrganicPayload(pydantic.BaseModel):
     text_to_compress: str
     model_name: str
     tier: str
@@ -25,7 +26,7 @@ class OrganicResponse(pydantic.BaseModel):
     compressed_tokens: list[list[float]]
 
 
-class RegisterSynapse(bt.Synapse):
+class RegisterPayload(pydantic.BaseModel):
     port: int
 
 
@@ -33,15 +34,14 @@ class OrganicGate:
     def __init__(
         self,
         miner_manager: MinerManager,
-        wallet: bt.wallet,
+        wallet,
         config: bt.config,
         metagraph,
     ):
-        self.metagraph = metagraph
+        self.metagraph: bt.metagraph.__class__ = metagraph
         self.miner_manager = miner_manager
         self.wallet = wallet
         self.config = config
-        self.get_credentials()
         self.dendrite = bt.dendrite(wallet=wallet)
         self.app = FastAPI()
         self.app.add_api_route(
@@ -51,17 +51,19 @@ class OrganicGate:
             dependencies=[Depends(self.get_self)],
         )
         self.app.add_middleware(
-            TrustedHostMiddleware, allowed_hosts=[ORGANIC_CLIENT_URL, "localhost"]
+            TrustedHostMiddleware,
+            allowed_hosts=[constants.ORGANIC_CLIENT_URL, "localhost"],
         )
         self.loop = asyncio.get_event_loop()
         self.client_axon: bt.AxonInfo = None
         self.start_server()
+        self.register_to_client()
 
     def register_to_client(self):
-        synapse = RegisterSynapse(port=self.config.validator.gate_port)
-        self.call(self.dendrite, ORGANIC_CLIENT_URL, synapse)
+        payload = RegisterPayload(port=self.config.validator.gate_port)
+        self.call(self.dendrite, constants.ORGANIC_CLIENT_URL, payload)
 
-    async def forward(self, request: OrganicRequest):
+    async def forward(self, request: OrganicPayload):
         synapse = TextCompressProtocol(
             context=request.text_to_compress,
         )
@@ -80,7 +82,7 @@ class OrganicGate:
         response: TextCompressProtocol = await self.dendrite.forward(
             axons=[target_axon],
             synapse=synapse,
-            timeout=TIER_CONFIG[request.tier]["timeout"],
+            timeout=constants.TIER_CONFIG[request.tier].timeout,
         )
         return OrganicResponse(compressed_tokens=response.compressed_tokens)
 
@@ -98,9 +100,8 @@ class OrganicGate:
 
     async def call(
         self,
-        dendrite: bt.dendrite,
         url: str,
-        synapse: bt.Synapse = bt.Synapse(),
+        payload: RegisterPayload,
         timeout: float = 12.0,
     ) -> bt.Synapse:
         """
@@ -109,33 +110,33 @@ class OrganicGate:
         Args:
             dendrite (bt.Dendrite): The Dendrite object to send the request.
             url (str): The URL of the Organic Client Server.
-            synapse (bt.Synapse, optional): The Synapse object encapsulating the data. Defaults to a new :func:`bt.Synapse` instance.
+            payload (pydantic.BaseModel): The payload to send in the request.
             timeout (float, optional): Maximum duration to wait for a response from the Axon in seconds. Defaults to ``12.0``.
 
         Returns:
-            bt.Synapse: The Synapse object, updated with the response data from the Axon.
+
         """
 
-        request_name = synapse.__class__.__name__
-        url = f"{ORGANIC_CLIENT_URL}/{request_name}"
-        target_axon = bt.AxonInfo(
-            ip="0.0.0.0",
-            port="8080",
-            hotkey="unknown",
-            coldkey="unknown",
-            version=__spec_version__,
-            ip_type="ipv4",
-        )
-        synapse = dendrite.preprocess_synapse_for_request(target_axon, synapse, timeout)
-        try:
-            async with (await dendrite.session).post(
+        url = f"{constants.ORGANIC_CLIENT_URL}/register"
+        message = "".join(random.choices("0123456789abcdef", k=16)).encode()
+        signature = f"0x{self.dendrite.keypair.sign(message).hex()}"
+
+        headers = {
+            "Content-Type": "application/json",
+            "message": signature,
+            "hotkey": self.wallet.hotkey.ss58_address,
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
                 url,
-                headers=synapse.to_headers(),
-                json=synapse.model_dump(),
+                json=payload.model_dump(),
+                headers=headers,
                 timeout=timeout,
-            ) as response:
-                json_response = await response.json()
-                dendrite.process_server_response(response, json_response, synapse)
-        except Exception as e:
-            LOGGER.error(f"Failed to send request: {e}")
-        return synapse
+            )
+
+        if response.status_code != 200:
+            bt.logging.error(
+                f"Failed to register to the Organic Client Server. Response: {response.text}"
+            )
+            return

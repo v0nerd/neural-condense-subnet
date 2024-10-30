@@ -7,7 +7,7 @@ import time
 from substrateinterface import SubstrateInterface
 from .config import add_common_config, add_validator_config
 from abc import abstractmethod, ABC
-from ..constants import EPOCH_LENGTH
+from ..constants import constants
 
 
 class Validator(ABC):
@@ -110,7 +110,7 @@ class Validator(ABC):
 
             end_epoch = time.time()
             elapsed = end_epoch - start_epoch
-            time_to_sleep = max(0, EPOCH_LENGTH - elapsed)
+            time_to_sleep = max(0, constants.EPOCH_LENGTH - elapsed)
             bt.logging.info(f"Epoch finished. Sleeping for {time_to_sleep} seconds.")
             time.sleep(time_to_sleep)
 

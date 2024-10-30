@@ -34,7 +34,7 @@ class Validator(ncc.BaseValidator):
             thread.join()
 
     def _forward_tier(self, tier):
-        supporting_models = ncc.constants.TIER_CONFIG[tier]["supporting_models"]
+        supporting_models = ncc.constants.TIER_CONFIG[tier].supporting_models
         model_name = random.choice(supporting_models)
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         serving_counter: dict[int, ncc.ServingCounter] = (
@@ -118,7 +118,7 @@ class Validator(ncc.BaseValidator):
                 or not response.is_success
                 or (
                     len(response.compressed_tokens)
-                    > ncc.constants.TIER_CONFIG[tier]["max_condensed_tokens"]
+                    > ncc.constants.TIER_CONFIG[tier].max_condensed_tokens
                 )
             ):
                 self.miner_manager.update_scores([uid], [0])
@@ -144,12 +144,12 @@ class Validator(ncc.BaseValidator):
                 {
                     "normalized_score_in_batch": score,
                     "process_time/timeout": response.dendrite.process_time
-                    / ncc.constants.TIER_CONFIG[tier]["timeout"],
+                    / ncc.constants.TIER_CONFIG[tier].timeout,
                 }
                 for score, response in zip(scores, valid_responses)
             ]
             scores = [
-                ncc.constants.TIER_CONFIG[tier]["scoring_lambda"](factors)
+                ncc.constants.TIER_CONFIG[tier].scoring_lambda(factors)
                 for factors in factors_list
             ]
 

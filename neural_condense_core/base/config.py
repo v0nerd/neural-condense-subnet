@@ -1,6 +1,6 @@
 import bittensor as bt
 from argparse import ArgumentParser
-from ..constants import TIER_CONFIG
+from ..constants import constants
 
 
 def add_common_config(parser: ArgumentParser):
@@ -22,7 +22,7 @@ def add_validator_config(parser: ArgumentParser):
 
 
 def add_miner_config(parser: ArgumentParser):
-    tier_names = list(TIER_CONFIG.keys())
+    tier_names = list(constants.TIER_CONFIG.keys())
     parser.add_argument(
         "--miner.backend_host",
         type=str,
