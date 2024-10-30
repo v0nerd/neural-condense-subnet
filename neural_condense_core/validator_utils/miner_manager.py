@@ -18,18 +18,6 @@ class ServingCounter:
     def __init__(self, rate_limit: int):
         self.rate_limit = rate_limit
         self.counter = 0
-        self.steps_to_score = self._select_step_to_score()
-
-    def _select_step_to_score(self):
-        r"""
-        Selects a random step to do score.
-        """
-        return random.choices(
-            list(
-                range(1, int(self.rate_limit * constants.RPE_PERCENTAGE_FOR_SYNTHETIC))
-            ),
-            k=2,
-        )
 
     def increment(self) -> bool:
         r"""
@@ -126,13 +114,25 @@ class MinerManager:
             deserialize=False,
             timeout=4,
         )
+        bt.logging.info(f"Responses: {responses}")
         for uid, response in zip(uids, responses):
+            metadata.setdefault(uid, {})
+            current_tier = self.metadata.get(uid, {}).get("tier", "unknown")
             for key, default_value in self.default_metadata_items:
-                metadata.setdefault(uid, {})
                 if response:
                     metadata[uid][key] = response.metadata.get(key, default_value)
                 else:
                     metadata[uid][key] = default_value
+
+            if metadata[uid]["tier"] != current_tier:
+                bt.logging.info(
+                    f"Tier of uid {uid} changed from {current_tier} to {metadata[uid]['tier']}."
+                )
+                metadata[uid]["score"] = 0.0
+            if "score" not in metadata[uid]:
+                metadata[uid]["score"] = 0.0
+
+        bt.logging.info(f"Metadata: {metadata}")
         bt.logging.success(f"Updated metadata for {len(uids)} uids.")
         return metadata
 

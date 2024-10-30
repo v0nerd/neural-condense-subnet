@@ -30,7 +30,7 @@ class Miner(ncc.BaseMiner):
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"http://{self.config.miner.backend_host}:{self.config.miner.backend_port}/forward_text_compress",
+                f"http://{self.config.miner.backend_host}:{self.config.miner.backend_port}/condense",
                 json=payload,
                 timeout=synapse.timeout,
             )
