@@ -1,13 +1,20 @@
 import neural_condense_core as ncc
 import httpx
+from typing import Tuple
 
 
 class Miner(ncc.BaseMiner):
     def __init__(self):
         super().__init__()
-        self.forward_fns.append(self.forward_text_compress)
         self.blacklist_fns.append(self.blacklist_fn)
-        self.rate_limits = ncc.build_rate_limit(self.metagraph, self.config)
+        self.forward_fns.append(self.forward_text_compress)
+        self.setup_logging()
+        self.rate_limits = {
+            uid: ncc.ServingCounter(rate_limit)
+            for uid, rate_limit in ncc.build_rate_limit(
+                self.metagraph, self.config
+            ).items()
+        }
 
     async def forward_text_compress(
         self, synapse: ncc.TextCompressProtocol
@@ -23,7 +30,7 @@ class Miner(ncc.BaseMiner):
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"http://{self.config.backend_host}:{self.config.backend_port}/forward_text_compress",
+                f"http://{self.config.miner.backend_host}:{self.config.miner.backend_port}/forward_text_compress",
                 json=payload,
                 timeout=synapse.timeout,
             )
@@ -32,7 +39,7 @@ class Miner(ncc.BaseMiner):
             synapse.compressed_tokens = compressed_tokens
         return synapse
 
-    def blacklist_fn(self, synapse: ncc.TextCompressProtocol):
+    def blacklist_fn(self, synapse: ncc.TextCompressProtocol) -> Tuple[bool, str]:
         r"""
         Blacklist function for the Text-Compress task.
         Args:
@@ -44,7 +51,7 @@ class Miner(ncc.BaseMiner):
         hotkey = synapse.dendrite.hotkey
         uid = self.metagraph.hotkeys.index(hotkey)
         stake = self.metagraph.S[uid]
-        if stake < self.config.miner.min_stake:
+        if stake < ncc.constants.MIN_STAKE:
             return True, "Stake too low."
         allowed = self.rate_limits[uid].increment()
         if not allowed:

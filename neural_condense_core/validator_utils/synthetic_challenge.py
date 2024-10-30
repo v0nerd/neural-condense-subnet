@@ -167,7 +167,7 @@ class Challenger:
                         "answer": example["answer"],
                     }
 
-        return generator
+        return generator()
 
     def _load_raw_dataset(self) -> Iterator[dict]:
         r"""

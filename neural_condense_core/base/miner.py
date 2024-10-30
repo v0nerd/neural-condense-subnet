@@ -3,6 +3,7 @@ import time
 import argparse
 import traceback
 import bittensor as bt
+from typing import Tuple
 from .config import add_common_config, add_miner_config
 from ..protocol import Metadata
 
@@ -10,7 +11,6 @@ from ..protocol import Metadata
 class Miner:
     def __init__(self):
         self.config = self.get_config()
-        self.setup_logging()
         self.blacklist_fns = [self._blacklist_fn]
         self.forward_fns = [self._forward_metadata]
         self.setup_bittensor_objects()
@@ -22,7 +22,7 @@ class Miner:
         parser = argparse.ArgumentParser()
         parser = add_miner_config(parser)
         parser = add_common_config(parser)
-        config = parser.parse_args()
+        config = bt.config(parser)
         config.full_path = os.path.expanduser(
             "{}/{}/{}/netuid_{}/{}".format(
                 config.logging.logging_dir,
@@ -32,10 +32,18 @@ class Miner:
                 "miner",
             )
         )
+        print(config)
         os.makedirs(config.full_path, exist_ok=True)
         return config
 
     def setup_logging(self):
+        bt.logging.enable_default()
+        bt.logging.enable_info()
+        
+        if self.config.logging.debug:
+            bt.logging.enable_debug()
+        if self.config.logging.trace:
+            bt.logging.enable_trace()
         # Activate Bittensor's logging with the set configurations.
         bt.logging(config=self.config, logging_dir=self.config.full_path)
         bt.logging.info(
@@ -81,12 +89,12 @@ class Miner:
         bt.logging.info(f"Starting axon server on port: {self.config.axon.port}")
         self.axon.start()
 
-    def _forward_metadata(self, synapse: Metadata):
+    def _forward_metadata(self, synapse: Metadata) -> Metadata:
         synapse.metadata = self.metadata
         return synapse
 
-    def _blacklist_fn(self, synapse: Metadata):
-        return False
+    def _blacklist_fn(self, synapse: Metadata) -> Tuple[bool, str]:
+        return False, "Always pass."
 
     def run(self):
         self.setup_axon()

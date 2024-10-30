@@ -135,7 +135,9 @@ class Validator(ncc.BaseValidator):
             payload["ground_truth_request"]["criterias"] = task_config.criterias
 
             scoring_response = requests.post(
-                ncc.constants.SCORING_ENDPOINT, json=payload, timeout=120
+                f"http://{self.config.validator.score_backend.host}:{self.config.validator.score_backend.port}/scoring",
+                json=payload,
+                timeout=120,
             )
             scoring_response = scoring_response.json()
 

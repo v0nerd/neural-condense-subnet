@@ -40,9 +40,12 @@ class Validator(ABC):
         return config
 
     def setup_logging(self):
-        if self.config.logging.enable_debug:
+        bt.logging.enable_default()
+        bt.logging.enable_info()
+
+        if self.config.logging.debug:
             bt.logging.enable_debug()
-        if self.config.logging.enable_trace:
+        if self.config.logging.trace:
             bt.logging.enable_trace()
         bt.logging(config=self.config, logging_dir=self.config.full_path)
         bt.logging.info(

@@ -8,6 +8,7 @@ def add_common_config(parser: ArgumentParser):
     bt.subtensor.add_args(parser)
     bt.logging.add_args(parser)
     bt.wallet.add_args(parser)
+    bt.axon.add_args(parser)
     return parser
 
 
@@ -17,6 +18,19 @@ def add_validator_config(parser: ArgumentParser):
         type=int,
         default=12345,
         help="The port of the validator gate server.",
+    )
+
+    parser.add_argument(
+        "--validator.score_backend.host",
+        type=str,
+        default="localhost",
+        help="The host of the score backend server.",
+    )
+    parser.add_argument(
+        "--validator.score_backend.port",
+        type=int,
+        default=8089,
+        help="The port of the score backend server.",
     )
     return parser
 
