@@ -26,11 +26,122 @@ class BatchedScoringRequest(BaseModel):
     ground_truth_request: GroundTruthRequest
 
 
+class ScoringService:
+    def __init__(self):
+        self.model = None
+        self.tokenizer = None
+        self.current_model_name = None
+
+    def load_model(self, model_name: str):
+        if not self.model or self.current_model_name != model_name:
+            if self.model:
+                self.unload_model()
+
+            self.model = CondensibleModelForCausalLM.from_pretrained(model_name)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.current_model_name = model_name
+
+    def unload_model(self):
+        del self.model
+        del self.tokenizer
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    @torch.no_grad()
+    def get_scoring(self, request: BatchedScoringRequest):
+        self.load_model(request.ground_truth_request.model_name)
+        outputs = []
+
+        if "loss" in request.ground_truth_request.criterias:
+            scores = self.calculate_loss_criteria(request)
+            outputs.append(scores)
+
+        if "bleu" in request.ground_truth_request.criterias:
+            scores = self.calculate_bleu_criteria(request)
+            outputs.append(scores)
+
+        scores = np.mean(outputs, axis=0)
+        return {"scores": scores}
+
+    def calculate_loss_criteria(self, request: BatchedScoringRequest) -> np.ndarray:
+        original_labels = self.tokenizer.encode(
+            request.ground_truth_request.expected_completion,
+            return_tensors="pt",
+            truncation=False,
+            padding=False,
+            return_attention_mask=False,
+            add_special_tokens=False,
+        )["input_ids"]
+        context = request.ground_truth_request.context
+        losses = []
+
+        for miner_output in request.miner_responses:
+            n_compressed_tokens = len(miner_output.compressed_tokens)
+            labels = [-52] * n_compressed_tokens + original_labels
+            labels = torch.LongTensor(labels).unsqueeze(0).to(self.model.device)
+            labels = labels[:, 1:].reshape(-1)
+            input_ids = self.tokenizer.encode(
+                context,
+                return_tensors="pt",
+                truncation=False,
+                padding=False,
+                return_attention_mask=False,
+                add_special_tokens=False,
+            )["input_ids"]
+            inputs = self.model.prepare_condensed_inputs(
+                miner_output.compressed_tokens, input_ids
+            )
+            outputs = self.model(**inputs)
+            logits = outputs.logits
+            effective_logits = logits[:, :-1, :].reshape(-1, logits.shape[-1])
+            loss = F.cross_entropy(effective_logits, labels, ignore_index=-52)
+            losses.append(loss.item())
+        scores = loss_to_scores(losses)
+        return scores
+
+    def calculate_bleu_criteria(self, request: BatchedScoringRequest) -> np.ndarray:
+        pipeline = TextGenerationPipeline(self.model, self.tokenizer)
+        context = request.ground_truth_request.context
+        bleu_scores = []
+
+        for miner_output in request.miner_responses:
+            completions = pipeline(
+                context, max_length=64, condensed_tokens=miner_output.compressed_tokens
+            )
+            completion = completions[0]["generated_text"]
+            bleu_score = calculate_bleu(
+                request.ground_truth_request.expected_completion, completion
+            )
+            bleu_scores.append(bleu_score)
+
+        bleu_scores = np.array(bleu_scores)
+        bleu_scores = bleu_scores / np.sum(bleu_scores)
+        return bleu_scores
+
+    def calculate_compress_rate(self, request: BatchedScoringRequest) -> np.ndarray:
+        context = request.ground_truth_request.context
+        compress_rates = []
+
+        for miner_output in request.miner_responses:
+            n_compressed_tokens = len(miner_output.compressed_tokens)
+            input_ids = self.tokenizer.encode(
+                context,
+                return_tensors="pt",
+                truncation=False,
+                padding=False,
+                return_attention_mask=False,
+                add_special_tokens=False,
+            )["input_ids"]
+            compress_rate = len(input_ids) / n_compressed_tokens
+            compress_rates.append(compress_rate)
+
+        compress_rates = np.array(compress_rates)
+        compress_rates = compress_rates / np.sum(compress_rates)
+        return compress_rates
+
+
 app = FastAPI()
-MODEL: CondensibleModelForCausalLM = None
-PIPE: TextGenerationPipeline = None
-TOKENIZER: AutoTokenizer = None
-CURRENT_MODEL_NAME: str = None
+scoring_service = ScoringService()
 
 
 @app.get("/")
@@ -39,112 +150,5 @@ def is_alive():
 
 
 @app.post("/scoring")
-@torch.no_grad()
 def get_scoring(request: BatchedScoringRequest):
-    model_name = request.ground_truth_request.model_name
-    if not MODEL:
-        MODEL = CondensibleModelForCausalLM.from_pretrained(model_name)
-        TOKENIZER = AutoTokenizer.from_pretrained(model_name)
-        CURRENT_MODEL_NAME = model_name
-
-    if CURRENT_MODEL_NAME != model_name:
-        del MODEL
-        del TOKENIZER
-        gc.collect()
-        torch.cuda.empty_cache()
-        MODEL = CondensibleModelForCausalLM.from_pretrained(model_name)
-        TOKENIZER = AutoTokenizer.from_pretrained(model_name)
-        CURRENT_MODEL_NAME = model_name
-
-    outputs = []
-    if "loss" in request.ground_truth_request.criterias:
-        scores = calculate_loss_criteria(request)
-        outputs.append(scores)
-
-    if "bleu" in request.ground_truth_request.criterias:
-        scores = calculate_bleu_criteria(request)
-        outputs.append(scores)
-
-    scores = np.mean(outputs, axis=0)
-    return {"scores": scores}
-
-
-def calculate_loss_criteria(request: BatchedScoringRequest) -> np.ndarray:
-    original_labels = TOKENIZER.encode(
-        request.expected_completion,
-        return_tensors="pt",
-        truncation=False,
-        padding=False,
-        return_attention_mask=False,
-        add_special_tokens=False,
-    )["input_ids"]
-    context = request.ground_truth_request.context
-
-    losses = []
-
-    for miner_output in request.miner_responses:
-        n_compressed_tokens = len(miner_output.compressed_tokens)
-        labels = [-52] * n_compressed_tokens + original_labels
-        labels = torch.LongTensor(labels).unsqueeze(0).to(MODEL.device)
-        labels = labels[:, 1:].reshape(-1)
-        input_ids = TOKENIZER.encode(
-            context,
-            return_tensors="pt",
-            truncation=False,
-            padding=False,
-            return_attention_mask=False,
-            add_special_tokens=False,
-        )["input_ids"]
-        inputs = MODEL.prepare_condensed_inputs(
-            miner_output.compressed_tokens, input_ids
-        )
-        outputs = MODEL(**inputs)
-        logits = outputs.logits
-        effective_logits = logits[:, :-1, :].reshape(-1, logits.shape[-1])
-        loss = F.cross_entropy(effective_logits, labels, ignore_index=-52)
-        losses.append(loss.item())
-    scores = loss_to_scores(losses)
-
-    return scores
-
-
-def calculate_bleu_criteria(request: BatchedScoringRequest) -> np.ndarray:
-    PIPE = TextGenerationPipeline(MODEL, TOKENIZER)
-    context = request.ground_truth_request.context
-    bleu_scores = []
-
-    for miner_output in request.miner_responses:
-        completions = PIPE(
-            context, max_length=64, condensed_tokens=miner_output.compressed_tokens
-        )
-        completion = completions[0]["generated_text"]
-        bleu_score = calculate_bleu(
-            request.ground_truth_request.expected_completion, completion
-        )
-        bleu_scores.append(bleu_score)
-
-    bleu_scores = np.array(bleu_scores)
-    bleu_scores = bleu_scores / np.sum(bleu_scores)
-    return bleu_scores
-
-
-def calculate_compress_rate(request: BatchedScoringRequest) -> np.ndarray:
-    context = request.ground_truth_request.context
-    compress_rates = []
-
-    for miner_output in request.miner_responses:
-        n_compressed_tokens = len(miner_output.compressed_tokens)
-        input_ids = TOKENIZER.encode(
-            context,
-            return_tensors="pt",
-            truncation=False,
-            padding=False,
-            return_attention_mask=False,
-            add_special_tokens=False,
-        )["input_ids"]
-        compress_rate = len(input_ids) / n_compressed_tokens
-        compress_rates.append(compress_rate)
-
-    compress_rates = np.array(compress_rates)
-    compress_rates = compress_rates / np.sum(compress_rates)
-    return compress_rates
+    return scoring_service.get_scoring(request)
