@@ -4,8 +4,7 @@ from tqdm import tqdm
 from transformers import HfArgumentParser, AutoModelForCausalLM
 from peft import LoraConfig
 
-# from modeling_icae_multi_span import ICAE, ModelArguments, DataArguments, TrainingArguments, AdditionalArguments
-from ICAE import ICAE, ModelArguments, TrainingArguments, AdditionalArguments
+from ICAE import ICAE, ModelArguments ,AdditionalArguments
 import sys
 from safetensors.torch import load_file
 import rich
@@ -23,19 +22,18 @@ class InferenceLogger(ls.Logger):
 
 
 class Inference(ls.LitAPI):
-    def __init__(self, model_args, training_args, lora_config, *args, **kwargs):
+    def __init__(self, model_args,  lora_config, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.model_args = model_args
-        self.training_args = training_args
         self.lora_config = lora_config
 
     def setup(self, device):
         self.device = device
         self.model_compress = ICAE(
-            self.model_args, self.training_args, self.lora_config
+            self.model_args,  self.lora_config
         )
-        state_dict = load_file(self.training_args.output_dir)
+        state_dict = load_file(self.model_args.checkpoint_path)
         self.model_compress.load_state_dict(
             state_dict, strict=False
         )  # only load lora and memory token embeddings
@@ -103,8 +101,8 @@ class Inference(ls.LitAPI):
 
 
 if __name__ == "__main__":
-    parser = HfArgumentParser((ModelArguments, TrainingArguments, AdditionalArguments))
-    model_args, training_args, additional_args = parser.parse_args_into_dataclasses()
+    parser = HfArgumentParser((ModelArguments, AdditionalArguments))
+    model_args, additional_args = parser.parse_args_into_dataclasses()
     lora_config = LoraConfig(
         r=512,
         lora_alpha=32,
@@ -115,7 +113,6 @@ if __name__ == "__main__":
 
     inference = Inference(
         model_args=model_args,
-        training_args=training_args,
         lora_config=lora_config,
     )
 
