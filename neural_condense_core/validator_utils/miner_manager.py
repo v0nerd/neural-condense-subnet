@@ -1,6 +1,5 @@
 import json
 import os
-import random
 import bittensor as bt
 import numpy as np
 from ..common import build_rate_limit

@@ -1,11 +1,8 @@
-import json
 import torch
-from tqdm import tqdm
-from transformers import HfArgumentParser, AutoModelForCausalLM
+from transformers import HfArgumentParser
 from peft import LoraConfig
 
-from ICAE import ICAE, ModelArguments ,AdditionalArguments
-import sys
+from ICAE import ICAE, ModelArguments, AdditionalArguments
 from safetensors.torch import load_file
 import rich
 import litserve as ls
@@ -22,7 +19,7 @@ class InferenceLogger(ls.Logger):
 
 
 class Inference(ls.LitAPI):
-    def __init__(self, model_args,  lora_config, *args, **kwargs):
+    def __init__(self, model_args, lora_config, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.model_args = model_args
@@ -30,9 +27,7 @@ class Inference(ls.LitAPI):
 
     def setup(self, device):
         self.device = device
-        self.model_compress = ICAE(
-            self.model_args,  self.lora_config
-        )
+        self.model_compress = ICAE(self.model_args, self.lora_config)
         state_dict = load_file(self.model_args.checkpoint_path)
         self.model_compress.load_state_dict(
             state_dict, strict=False

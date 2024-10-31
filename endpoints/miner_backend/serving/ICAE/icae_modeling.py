@@ -1,11 +1,9 @@
 # ICAE that supports multi span concat
 
-import transformers
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import torch.nn as nn
 from dataclasses import dataclass, field
-from typing import Optional
 from peft import (
     get_peft_model,
 )
@@ -57,9 +55,7 @@ class ICAE(torch.nn.Module):
         self.model_name = model_args.model_name_or_path
         self.icae = AutoModelForCausalLM.from_pretrained(
             self.model_name,
-            torch_dtype=(
-                 torch.bfloat16
-            ),
+            torch_dtype=(torch.bfloat16),
             resume_download=True,
         )
         self.icae.to(self.device)
@@ -99,9 +95,7 @@ class ICAE(torch.nn.Module):
             self.vocab_size + self.mem_size,
             dtype=torch.long,
             device=self.device,
-        ).unsqueeze(
-            0
-        )  # mem tokens
+        ).unsqueeze(0)  # mem tokens
 
     def compute_num_segments(self, total_length):
         assert total_length > 0
@@ -125,8 +119,6 @@ class ICAE(torch.nn.Module):
     def _compress(
         self, input_ids: torch.LongTensor = None
     ):  # for inference; compress a fixed length of input into memory slots
-
-        batch_size = input_ids.size(0)
         total_length = input_ids.size(1)
         num_segments = self.compute_num_segments(total_length)
         segment_length = math.ceil(total_length / num_segments)

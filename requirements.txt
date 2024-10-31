@@ -11,3 +11,4 @@ litserve
 peft
 sentencepiece
 protobuf
+pre-commit

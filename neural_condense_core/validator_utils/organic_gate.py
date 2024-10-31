@@ -5,10 +5,8 @@ import asyncio
 import bittensor as bt
 import uvicorn
 from concurrent.futures import ThreadPoolExecutor
-import logging
 import random
 import httpx
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from ..constants import constants
 from ..protocol import TextCompressProtocol
 from ..validator_utils import MinerManager

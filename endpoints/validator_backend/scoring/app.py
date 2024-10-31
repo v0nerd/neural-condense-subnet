@@ -1,12 +1,10 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List
-import gc
 import torch.nn.functional as F
 import torch
 import numpy as np
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from transformers import TextGenerationPipeline
 from .utils import loss_to_scores, calculate_bleu
 import threading
 
@@ -80,7 +78,6 @@ class ScoringService:
             .squeeze(0)
             .to(model.device)
         )
-        context = request.ground_truth_request.context
         activation_prompt = request.ground_truth_request.activation_prompt
         losses = []
 
@@ -115,7 +112,6 @@ class ScoringService:
     def calculate_bleu_criteria(
         self, request: BatchedScoringRequest, model, tokenizer
     ) -> np.ndarray:
-        context = request.ground_truth_request.context
         activation_prompt = request.ground_truth_request.activation_prompt
         bleu_scores = []
 
