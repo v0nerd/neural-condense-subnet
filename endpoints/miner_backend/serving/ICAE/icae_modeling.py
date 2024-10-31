@@ -14,7 +14,7 @@ import math
 
 @dataclass
 class ModelArguments:
-    model_name_or_path: str = field(default="mistralai/Mistral-7B-Instruct-v0.2")
+    model_name_or_path: str = field(default="Condense-AI/Mistral-7B-Instruct-v0.2")
     lora_r: int = field(default=128, metadata={"help": "lora rank"})
     lora_dropout: float = field(default=0.05, metadata={"help": "lora dropout"})
     train: bool = field(
@@ -23,53 +23,9 @@ class ModelArguments:
             "help": "if true, the model ckpt will be initialized for training; else, it's for inference"
         },
     )
-
-
-@dataclass
-class TrainingArguments(transformers.TrainingArguments):
-    cache_dir: Optional[str] = field(default=None)
-    optim: str = field(default="adamw_torch")
-    model_max_length: int = field(
-        default=5120,
-        metadata={
-            "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
-        },
-    )
-    fixed_mem_size: int = field(
-        default=128,
-        metadata={"help": "Enalbing the fixed mem size."},
-    )
-    mean_compression_rate: int = field(
-        default=4,
-        metadata={"help": "Mean compression rate; default=4"},
-    )
-    min_tokens_for_lm: int = field(
-        default=64,
-        metadata={"help": "Minimum tokens for lm objective learning"},
-    )
-    leave_tokens_for_lm: int = field(
-        default=8,
-        metadata={"help": "Leave some tokens without loss for lm objective"},
-    )
-    lm_ratio: float = field(
-        default=0.0,
-        metadata={"help": "Ratio for LM training."},
-    )
-    add_special_token_for_lm: bool = field(
-        default=False,
-        metadata={
-            "help": "Add a special token for the prompt of language modeling; default: False"
-        },
-    )
-    restore_from: str = field(
-        default="",
-        metadata={
-            "help": "The checkpoint that should be restored from for fine-tuning"
-        },
-    )
-    output_dir: str = field(
-        default="/home/user/icae/checkpoint/icae/mistral_7b_ft_icae.safetensors",
-        metadata={"help": "Output dir"},
+    checkpoint_path: str = field(
+        default="checkpoints/mistral_7b_ft_icae.safetensors",
+        metadata={"help": "Checkpoint path"},
     )
 
 
@@ -94,29 +50,26 @@ class AdditionalArguments:
 
 
 class ICAE(torch.nn.Module):
-    def __init__(self, model_args, training_args, lora_config):
+    def __init__(self, model_args, lora_config):
         super().__init__()
         self.device = "cuda"
-        print("Device:", self.device)
         self.model_args = model_args
-        self.training_args = training_args
         self.model_name = model_args.model_name_or_path
         self.icae = AutoModelForCausalLM.from_pretrained(
             self.model_name,
             torch_dtype=(
-                torch.float16 if training_args.bf16 is False else torch.bfloat16
+                 torch.bfloat16
             ),
             resume_download=True,
         )
         self.icae.to(self.device)
-        print(self.icae)
 
         self.vocab_size = self.icae.config.vocab_size + 1  # [PAD] token
         self.pad_token_id = self.vocab_size - 1
-        self.mean_compression_rate = training_args.mean_compression_rate
+        self.mean_compression_rate = 4
 
         # tunable
-        self.mem_size = self.training_args.fixed_mem_size
+        self.mem_size = 128
         self.vocab_size_with_mem = (
             self.vocab_size + self.mem_size
         )  # so, the mem tokens are in the range [self.vocab_size, self.vocab_size + self.mem_size)
@@ -181,7 +134,6 @@ class ICAE(torch.nn.Module):
         max_compressed_length = num_segments * self.mem_size
         compress_outputs = torch.zeros((max_compressed_length, self.dim))
 
-        print("Num_segment", num_segments)
         for segment_idx in range(num_segments):
             start_idx = segment_idx * segment_length
             end_idx = min((segment_idx + 1) * segment_length, total_length)
@@ -196,9 +148,6 @@ class ICAE(torch.nn.Module):
             mem_flag = segment_input_ids >= self.vocab_size
             embed_tokens = self.icae.get_base_model().model.embed_tokens
             embed_tokens.to(self.device)
-            print(segment_input_ids)
-            print(self.icae.get_base_model().model.embed_tokens.weight)
-            print(embed_tokens.weight)
             segment_input_embedding = embed_tokens(segment_input_ids)
             self.memory_token_embed.to(self.device)
             segment_input_embedding[mem_flag] = self.memory_token_embed(
