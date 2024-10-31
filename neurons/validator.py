@@ -101,8 +101,13 @@ class Validator(ncc.BaseValidator):
         """
         task_config = random.choice(ncc.constants.SYNTHETIC_TASK_CONFIG)
         task_name = task_config.task
+        this_tier_config = ncc.constants.TIER_CONFIG[tier]
         rewarding_frequency = task_config.rewarding_frequency
-        groud_truth_synapse = self.challenger(tokenizer, task_name)
+        groud_truth_synapse = self.challenger(
+            tokenizer=tokenizer,
+            task=task_name,
+            max_context_length_in_chars=this_tier_config.max_context_length_in_chars,
+        )
         groud_truth_synapse.target_model = model_name
         synapse = groud_truth_synapse.model_copy()
         synapse.hide_ground_truth()
@@ -113,7 +118,7 @@ class Validator(ncc.BaseValidator):
             axons=axons,
             synapse=synapse,
             deserialize=False,
-            timeout=ncc.constants.TIER_CONFIG[tier].timeout,
+            timeout=this_tier_config.timeout,
         )
         valid_responses: list[ncc.TextCompressProtocol] = []
         valid_uids: list[int] = []
@@ -123,7 +128,7 @@ class Validator(ncc.BaseValidator):
                 or not response.is_success
                 or (
                     len(response.compressed_tokens)
-                    >= ncc.constants.TIER_CONFIG[tier].max_condensed_tokens
+                    >= this_tier_config.max_condensed_tokens
                 )
             ):
                 bt.logging.info(f"Invalid response from uid {uid}")
@@ -162,13 +167,12 @@ class Validator(ncc.BaseValidator):
                 {
                     "normalized_score_in_batch": score,
                     "process_time/timeout": response.dendrite.process_time
-                    / ncc.constants.TIER_CONFIG[tier].timeout,
+                    / this_tier_config.timeout,
                 }
                 for score, response in zip(scores, valid_responses)
             ]
             penalized_scores = [
-                ncc.constants.TIER_CONFIG[tier].scoring_lambda(factors)
-                for factors in factors_list
+                this_tier_config.scoring_lambda(factors) for factors in factors_list
             ]
             bt.logging.info(
                 f"Scores: {scores}\nFactors: {factors_list}\nPenalized scores: {penalized_scores}"

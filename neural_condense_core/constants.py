@@ -10,6 +10,7 @@ class TierConfig(BaseModel):
     scoring_lambda: Callable[[dict], float]
     supporting_models: List[str]
     max_condensed_tokens: int
+    max_context_length_in_chars: int
 
 
 class SyntheticTaskConfig(BaseModel):
