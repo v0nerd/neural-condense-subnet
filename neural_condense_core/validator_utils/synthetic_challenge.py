@@ -120,6 +120,7 @@ class Challenger:
                 for example in dataset:
                     if len(contexts) < n_contexts:
                         contexts.append(example["context"])
+                        continue
                     yield {
                         "contexts": contexts,
                         "question": example["question"],
