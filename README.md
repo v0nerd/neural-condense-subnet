@@ -35,7 +35,7 @@
 
 
 ### 🔒 Subnet as a Data Encryption Layer for Bittensor
-- ✅ **Neural Encrypted Conversations:** Encrypts conversations into limited tokens
+- ✅ **Neural Encrypted Conversations:** The subnet offers an additional benefit regarding privacy. If users or companies utilize a subnet to transform their context into condensed tokens before sending them to other LLM services, this approach can help prevent context leaks. The transformation increases the computational complexity, making it more difficult for unauthorized entities to extract the original context.
 
 
 ## 📚 Documentation
