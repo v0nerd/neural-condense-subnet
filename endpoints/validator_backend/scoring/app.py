@@ -7,7 +7,6 @@ import torch
 import numpy as np
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import TextGenerationPipeline
-from .condensible_model_for_causal_lm import CondensibleModelForCausalLM
 from .utils import loss_to_scores, calculate_bleu
 import threading
 
@@ -37,7 +36,7 @@ class ScoringService:
     def load_model(self, model_name: str):
         with self.lock:
             if model_name not in self.models:
-                self.models[model_name] = CondensibleModelForCausalLM.from_pretrained(
+                self.models[model_name] = AutoModelForCausalLM.from_pretrained(
                     model_name
                 )
                 self.tokenizers[model_name] = AutoTokenizer.from_pretrained(model_name)
@@ -118,8 +117,8 @@ class ScoringService:
                 padding=False,
                 add_special_tokens=False,
             )["input_ids"].to(model.device)
-            inputs = model.prepare_condensed_inputs(
-                miner_output.compressed_tokens, input_ids
+            inputs = self.prepare_condensed_inputs(
+                miner_output.compressed_tokens, input_ids, model.get_input_embeddings()
             )
             generated_outputs = model.generate(
                 inputs_embeds=inputs["input_embeds"],
@@ -142,6 +141,34 @@ class ScoringService:
         else:
             bleu_scores = np.zeros_like(bleu_scores)
         return bleu_scores
+
+    def prepare_condensed_inputs(
+        self,
+        condensed_tokens: List[List[float]],
+        input_ids: List[int],
+        embed_tokens: torch.nn.Embedding,
+        device="cuda",
+    ):
+        r"""
+        Prepare the inputs for the model.
+        Args:
+        - condensed_tokens (List[List[float]]): The condensed tokens.
+        - input_ids (List[int]): The input ids to be concatenated with the condensed tokens.
+        Returns:
+        - inputs (dict): The inputs for the model.
+        """
+        if isinstance(input_ids, list):
+            input_ids = torch.LongTensor(input_ids).unsqueeze(0)
+        else:
+            assert isinstance(input_ids, torch.Tensor)
+        if isinstance(condensed_tokens, list):
+            condensed_tokens = torch.FloatTensor(condensed_tokens).unsqueeze(0)
+        else:
+            assert isinstance(condensed_tokens, torch.Tensor)
+        input_tokens = embed_tokens(input_ids)
+        input_embeds = torch.cat([condensed_tokens, input_tokens], dim=1)
+        input_embeds = input_embeds.to(device)
+        return {"input_embeds": input_embeds}
 
 
 app = FastAPI()
