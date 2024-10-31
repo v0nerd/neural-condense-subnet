@@ -50,7 +50,7 @@ class Constants(BaseModel):
             ),
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
             max_condensed_tokens=768,
-            max_context_length_in_chars=3072,
+            max_context_length_in_chars=4096,
         ),
     }
 
