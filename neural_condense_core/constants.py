@@ -25,8 +25,9 @@ class Constants(BaseModel):
             requests_per_epoch=100,
             timeout=24,
             scoring_lambda=lambda x: x["normalized_score_in_batch"],
-            supporting_models=["mistralai/Mistral-7B-Instruct-v0.2"],
-            max_condensed_tokens=64,
+            supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
+            max_condensed_tokens=196,
+            max_context_length_in_chars=1536,
         ),
         "inference_0": TierConfig(
             incentive_percentage=0.25,
@@ -35,8 +36,9 @@ class Constants(BaseModel):
             scoring_lambda=lambda x: max(
                 0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.4
             ),
-            supporting_models=["mistralai/Mistral-7B-Instruct-v0.2"],
+            supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
             max_condensed_tokens=256,
+            max_context_length_in_chars=1536,
         ),
         "inference_1": TierConfig(
             incentive_percentage=0.25,
@@ -45,8 +47,9 @@ class Constants(BaseModel):
             scoring_lambda=lambda x: max(
                 0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.6
             ),
-            supporting_models=["mistralai/Mistral-7B-Instruct-v0.2"],
-            max_condensed_tokens=128,
+            supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
+            max_condensed_tokens=768,
+            max_context_length_in_chars=3072,
         ),
     }
 
