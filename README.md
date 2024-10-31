@@ -16,20 +16,23 @@
 ## 🌟 Key Features:
 
 ### ⚡ Subnet as an Accelerate Adapter for LLM Inference
-- ✅ **Seamless Integration:** Effortlessly integrates with LLM inference engines, such as `transformers`.
-- ✅ **Flexible Support:** Flexible to support any LLM model with any size.
-- ✅ **Incentive Mechanism:** Designed with a strong, evolving incentive structure, encouraging miners to innovate.
-- ✅ **Fully Decentralized Validator**: No Centralized API.
-- ✅ **Fast & High Workload:** Miners are categorized by tier. 
-- ✅ **Tiered Nodes:** Nodes are categorized by tier.
+- 🌐 **Seamless Integration**: Effortlessly integrates with LLM inference engines, such as transformers 🤗, vllm.
+- 🧩 **Token Compression**: The subnet API compresses long sequences of natural language tokens into soft tokens.
+- 🏛️ **Decentralized Network**: The subnet is a decentralized network that allows miners to contribute to the compression process.
+- 📊 **Tiered System**: The subnet has a tiered system, with a research tier for experimentation and an inference tier for production-scale use.
+- 📏 **Benchmarking and Validation**: The subnet owner defines synthetic metrics to benchmark miners’ performance, ensuring quality and efficiency.
 
 ### ⚙️ Node Tiers
 
-| **Tier**       | **Purpose**                           | **Context Size**         | **Speed**     |
-|----------------|---------------------------------------|---------------------------|---------------|
-| `research`     | Warmup tier for new LLM model releases | Flexible                  | Unrestricted  |
-| `inference_0`  | Optimized for **long context** in popular LLMs | Up to 1536 tokens       | Fast         |
-| `inference_1`  | Optimized for **very long context** in popular LLMs | Up to 4096 tokens       | Fast         |
+| **Tier**       | **Purpose**                   | **Timeout**  | **Workload**  | **Time Penalty** | **Supporting Models**               |
+|----------------|-------------------------------|--------------|---------------|------------------|--------------------------------------|
+| `research`     | Highest performance competition | High         | Low           | No time penalty  | `mistralai/Mistral-7B-Instruct-v0.2` |
+| `inference_0`  | General inference miners      | Medium       | Medium        | Medium penalty   | `mistralai/Mistral-7B-Instruct-v0.2` |
+| `inference_1`  | Highly optimized inference miners        | Low          | High          | High penalty     | `mistralai/Mistral-7B-Instruct-v0.2` |
+
+
+*Supporting models can be flexibly added based on tailored needs.*
+
 
 --- 
 
