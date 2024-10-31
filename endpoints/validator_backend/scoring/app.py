@@ -165,11 +165,11 @@ class ScoringService:
             condensed_tokens = torch.FloatTensor(condensed_tokens).unsqueeze(0)
         else:
             assert isinstance(condensed_tokens, torch.Tensor)
-
         if condensed_tokens.dim() == 2:
             condensed_tokens = condensed_tokens.unsqueeze(0)
 
         input_tokens = embed_tokens(input_ids)
+        print(condensed_tokens.shape, input_tokens.shape)
         input_embeds = torch.cat([condensed_tokens, input_tokens], dim=1)
         input_embeds = input_embeds.to(device)
         return {"input_embeds": input_embeds}
