@@ -32,6 +32,7 @@ class ScoringService:
         self.models = {}
         self.tokenizers = {}
         self.lock = threading.Lock()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def load_model(self, model_name: str):
         with self.lock:
@@ -39,6 +40,7 @@ class ScoringService:
                 self.models[model_name] = AutoModelForCausalLM.from_pretrained(
                     model_name
                 )
+                self.models[model_name].to(self.device)
                 self.tokenizers[model_name] = AutoTokenizer.from_pretrained(model_name)
 
     @torch.no_grad()
