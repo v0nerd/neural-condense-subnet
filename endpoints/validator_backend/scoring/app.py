@@ -18,7 +18,6 @@ class GroundTruthRequest(BaseModel):
     context: str
     expected_completion: str
     model_name: str
-    max_condensed_tokens: int
     criterias: List[str]
 
 
