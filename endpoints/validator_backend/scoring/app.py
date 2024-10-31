@@ -83,7 +83,9 @@ class ScoringService:
 
         for miner_output in request.miner_responses:
             n_compressed_tokens = len(miner_output.compressed_tokens)
-            labels = torch.full((n_compressed_tokens,), -52, dtype=torch.long)
+            labels = torch.full((n_compressed_tokens,), -52, dtype=torch.long).to(
+                model.device
+            )
             labels = torch.cat([labels, original_labels])
             labels = labels.unsqueeze(0).to(model.device)
             labels = labels[:, 1:].reshape(-1)
@@ -171,6 +173,7 @@ class ScoringService:
             condensed_tokens = condensed_tokens.unsqueeze(0)
 
         input_tokens = embed_tokens(input_ids)
+        condensed_tokens = condensed_tokens.to(input_tokens.device)
         print(condensed_tokens.shape, input_tokens.shape)
         inputs_embeds = torch.cat([condensed_tokens, input_tokens], dim=1)
         inputs_embeds = inputs_embeds.to(device)
