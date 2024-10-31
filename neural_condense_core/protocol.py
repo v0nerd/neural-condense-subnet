@@ -22,6 +22,7 @@ class TextCompressProtocol(Synapse):
     context: str = ""
     compressed_tokens: List[List[float]] = []
     expected_completion: str = ""
+    activation_prompt: str = ""
     target_model: str = ""
 
     def get_miner_payload(self):
@@ -40,10 +41,12 @@ class TextCompressProtocol(Synapse):
         Hide the ground truth from the miner.
         """
         self.expected_completion = ""
+        self.activation_prompt = ""
 
     def deserialize(self) -> Synapse:
         return {
             "context": self.context,
             "compressed_tokens": self.compressed_tokens,
             "expected_completion": self.expected_completion,
+            "activation_prompt": self.activation_prompt,
         }

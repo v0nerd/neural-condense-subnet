@@ -1,6 +1,8 @@
 import neural_condense_core as ncc
 import httpx
 from typing import Tuple
+import bittensor as bt
+import numpy as np
 
 
 class Miner(ncc.BaseMiner):
@@ -26,6 +28,8 @@ class Miner(ncc.BaseMiner):
         Returns:
             synapse (TextCompressProtocol): The synapse containing the compressed tokens.
         """
+        bt.logging.info(f"Forwarding text compress: {synapse.context[:100]}...")
+
         payload = synapse.get_miner_payload()
 
         async with httpx.AsyncClient() as client:
@@ -37,6 +41,7 @@ class Miner(ncc.BaseMiner):
             response = response.json()
             compressed_tokens = response["compressed_tokens"]
             synapse.compressed_tokens = compressed_tokens
+        bt.logging.info(f"Compressed shape: {np.array(compressed_tokens).shape}")
         return synapse
 
     def blacklist_fn(self, synapse: ncc.TextCompressProtocol) -> Tuple[bool, str]:
@@ -54,6 +59,9 @@ class Miner(ncc.BaseMiner):
         if stake < ncc.constants.MIN_STAKE:
             return True, "Stake too low."
         allowed = self.rate_limits[uid].increment()
+        bt.logging.info(
+            f"Rate limit: {uid} {self.rate_limits[uid].counter}/{self.rate_limits[uid].rate_limit}"
+        )
         if not allowed:
             return True, "Rate limit exceeded."
         return False, ""

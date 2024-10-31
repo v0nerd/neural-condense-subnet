@@ -10,6 +10,8 @@ class Challenger:
     def __init__(self):
         self.raw_dataset = self._load_raw_dataset()
         self.qa_dataset = self._load_qa_dataset()
+        self.sat = "[START-ACTIVATE-TOKEN]"
+        self.eat = "[END-ACTIVATE-TOKEN]"
 
     def __call__(
         self, tokenizer: AutoTokenizer, task: str = ""
@@ -44,27 +46,24 @@ class Challenger:
         messages = [
             {
                 "role": "user",
-                "content": f"""Given the context: {contexts_as_bullets}. {prompt_after_context}""",
+                "content": f"""Given the context: {contexts_as_bullets}.{self.sat} {prompt_after_context}{self.eat}""",
             },
-        ]
-        context = self._get_context(messages[0], tokenizer, prompt_after_context)
-        messages.append(
             {
                 "role": "assistant",
                 "content": answer,
             },
-        )
-        expected_completion = self._get_expected_completion(
-            messages, tokenizer, context
-        )
+        ]
 
-        assert context + expected_completion == tokenizer.apply_chat_template(
-            messages, tokenize=False
-        ), "The context and the expected completion do not match the messages."
+        messages_str = tokenizer.apply_chat_template(messages, tokenize=False)
+
+        context, activation_prompt, expected_completion = re.split(
+            f"{re.escape(self.sat)}|{re.escape(self.eat)}", messages_str
+        )
 
         protocol = TextCompressProtocol(
             context=context,
             expected_completion=expected_completion,
+            activation_prompt=activation_prompt,
         )
         return protocol
 
@@ -81,66 +80,26 @@ class Challenger:
         messages = [
             {
                 "role": "user",
-                "content": f"""Given the context: {text}. {prompt_after_context}""",
+                "content": f"""Given the context: {text}.{self.sat} {prompt_after_context}{self.eat}""",
             },
-        ]
-        context = self._get_context(messages[0], tokenizer, prompt_after_context)
-        messages.append(
             {
                 "role": "assistant",
                 "content": text,
             },
-        )
-        expected_completion = self._get_expected_completion(
-            messages, tokenizer, context
-        )
+        ]
 
-        assert context + expected_completion == tokenizer.apply_chat_template(
-            messages, tokenize=False
-        ), "The context and the expected completion do not match the messages."
+        messages_str = tokenizer.apply_chat_template(messages, tokenize=False)
+
+        context, activation_prompt, expected_completion = re.split(
+            f"{re.escape(self.sat)}|{re.escape(self.eat)}", messages_str
+        )
 
         protocol = TextCompressProtocol(
             context=context,
             expected_completion=expected_completion,
+            activation_prompt=activation_prompt,
         )
         return protocol
-
-    def _get_context(
-        self, message: dict, tokenizer: AutoTokenizer, prompt_after_context: str
-    ) -> str:
-        r"""
-        Get the context from the message.
-        Args:
-        - message (dict): The message.
-        - tokenizer (AutoTokenizer): The tokenizer to be used.
-        """
-        messages = [
-            {
-                "role": "user",
-                "content": message["content"],
-            },
-        ]
-        messages_str: str = tokenizer.apply_chat_template(messages, tokenize=False)
-        # Remove all text after the prompt_after_context.
-        context = re.sub(
-            f"{re.escape(prompt_after_context)}.*", "", messages_str, flags=re.DOTALL
-        )
-        return context
-
-    def _get_expected_completion(
-        self, messages: list[dict], tokenizer: AutoTokenizer, context: str
-    ) -> str:
-        r"""
-        Get the expected generation from the messages.
-        Args:
-        - messages (list[dict]): The messages.
-        - tokenizer (AutoTokenizer): The tokenizer to be used.
-        """
-        messages_str: str = tokenizer.apply_chat_template(messages, tokenize=False)
-        expected_generation = re.sub(
-            f"{re.escape(context)}", "", messages_str, flags=re.DOTALL
-        )
-        return expected_generation
 
     def _load_qa_dataset(self) -> Iterator[dict]:
         r"""

@@ -3,9 +3,12 @@ import bittensor as bt
 import threading
 import random
 from transformers import AutoTokenizer
+from transformers.utils.logging import disable_default_handler
 import requests
 import numpy as np
 import time
+
+disable_default_handler()
 
 
 class Validator(ncc.BaseValidator):
@@ -105,6 +108,7 @@ class Validator(ncc.BaseValidator):
         synapse.hide_ground_truth()
         dendrite = bt.dendrite(self.wallet)
         axons = [self.metagraph.axons[int(uid)] for uid in batched_uids]
+        bt.logging.info(f"Querying {tier} with uids: {batched_uids}")
         responses: list[ncc.TextCompressProtocol] = dendrite.query(
             axons=axons,
             synapse=synapse,
@@ -119,16 +123,27 @@ class Validator(ncc.BaseValidator):
                 or not response.is_success
                 or (
                     len(response.compressed_tokens)
-                    > ncc.constants.TIER_CONFIG[tier].max_condensed_tokens
+                    >= ncc.constants.TIER_CONFIG[tier].max_condensed_tokens
                 )
             ):
+                bt.logging.info(f"Invalid response from uid {uid}")
                 self.miner_manager.update_scores([uid], [0])
             else:
                 valid_responses.append(response)
                 valid_uids.append(uid)
+        if not valid_responses:
+            bt.logging.info("No valid responses.")
         if valid_responses and random.random() < rewarding_frequency:
+            bt.logging.info(
+                f"Updating scores of {len(valid_responses)} valid responses."
+            )
             payload = {
-                "miner_responses": [r.deserialize() for r in valid_responses],
+                "miner_responses": [
+                    {
+                        "compressed_tokens": response.compressed_tokens,
+                    }
+                    for response in valid_responses
+                ],
                 "ground_truth_request": groud_truth_synapse.deserialize(),
             }
             payload["ground_truth_request"]["model_name"] = model_name
@@ -151,12 +166,15 @@ class Validator(ncc.BaseValidator):
                 }
                 for score, response in zip(scores, valid_responses)
             ]
-            scores = [
+            penalized_scores = [
                 ncc.constants.TIER_CONFIG[tier].scoring_lambda(factors)
                 for factors in factors_list
             ]
+            bt.logging.info(
+                f"Scores: {scores}\nFactors: {factors_list}\nPenalized scores: {penalized_scores}"
+            )
 
-            self.miner_manager.update_scores(valid_uids, scores)
+            self.miner_manager.update_scores(valid_uids, penalized_scores)
 
     def set_weights(self):
         r"""

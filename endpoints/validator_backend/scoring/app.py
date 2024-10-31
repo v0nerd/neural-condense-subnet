@@ -18,6 +18,7 @@ class ScoringRequest(BaseModel):
 class GroundTruthRequest(BaseModel):
     context: str
     expected_completion: str
+    activation_prompt: str
     model_name: str
     criterias: List[str]
 
@@ -79,25 +80,28 @@ class ScoringService:
             .to(model.device)
         )
         context = request.ground_truth_request.context
+        activation_prompt = request.ground_truth_request.activation_prompt
         losses = []
 
         for miner_output in request.miner_responses:
             n_compressed_tokens = len(miner_output.compressed_tokens)
-            labels = torch.full((n_compressed_tokens,), -52, dtype=torch.long).to(
-                model.device
-            )
-            labels = torch.cat([labels, original_labels])
+            prefix_labels = torch.full(
+                (n_compressed_tokens,), -52, dtype=torch.long
+            ).to(model.device)
+            labels = torch.cat([prefix_labels, original_labels])
             labels = labels.unsqueeze(0).to(model.device)
             labels = labels[:, 1:].reshape(-1)
-            input_ids = tokenizer(
-                context,
+            activation_input_ids = tokenizer(
+                activation_prompt,
                 return_tensors="pt",
                 truncation=False,
                 padding=False,
                 add_special_tokens=False,
             )["input_ids"].to(model.device)
             inputs = self.prepare_condensed_inputs(
-                miner_output.compressed_tokens, input_ids, model.get_input_embeddings()
+                miner_output.compressed_tokens,
+                activation_input_ids,
+                model.get_input_embeddings(),
             )
             outputs = model(**inputs)
             logits = outputs.logits
@@ -111,18 +115,21 @@ class ScoringService:
         self, request: BatchedScoringRequest, model, tokenizer
     ) -> np.ndarray:
         context = request.ground_truth_request.context
+        activation_prompt = request.ground_truth_request.activation_prompt
         bleu_scores = []
 
         for miner_output in request.miner_responses:
-            input_ids = tokenizer(
-                context,
+            activation_input_ids = tokenizer(
+                activation_prompt,
                 return_tensors="pt",
                 truncation=False,
                 padding=False,
                 add_special_tokens=False,
             )["input_ids"].to(model.device)
             inputs = self.prepare_condensed_inputs(
-                miner_output.compressed_tokens, input_ids, model.get_input_embeddings()
+                miner_output.compressed_tokens,
+                activation_input_ids,
+                model.get_input_embeddings(),
             )
             generated_outputs = model.generate(
                 inputs_embeds=inputs["input_embeds"],
