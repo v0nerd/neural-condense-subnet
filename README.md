@@ -24,21 +24,21 @@
 
 ### ⚙️ Node Tiers
 
-| **Tier**       | **Purpose**                   | **Timeout**  | **Workload**  | **Time Penalty** | **Supporting Models**               |
-|----------------|-------------------------------|--------------|---------------|------------------|--------------------------------------|
-| `research`     | Highest performance competition | High         | Low           | No time penalty  | `mistralai/Mistral-7B-Instruct-v0.2` |
-| `inference_0`  | General inference miners      | Medium       | Medium        | Medium penalty   | `mistralai/Mistral-7B-Instruct-v0.2` |
-| `inference_1`  | Highly optimized inference miners        | Low          | High          | High penalty     | `mistralai/Mistral-7B-Instruct-v0.2` |
 
+| **Tier**       | **Purpose**                           | **Context Size**         | **Speed**     | **Supporting Models**               |
+|----------------|---------------------------------------|---------------------------|---------------|--------------------------------------|
+| `research`     | Warmup tier for new LLM model releases | Flexible                  | Unrestricted  | `mistralai/Mistral-7B-Instruct-v0.2` |
+| `inference_0`  | Optimized for **long context** in popular LLMs | Up to 1536 tokens       | Fast         | `mistralai/Mistral-7B-Instruct-v0.2` |
+| `inference_1`  | Optimized for **very long context** in popular LLMs | Up to 4096 tokens       | Fast         | `mistralai/Mistral-7B-Instruct-v0.2` |
 
-*Supporting models can be flexibly added based on tailored needs.*
+*Supporting models can be flexibly added based on tailored need.*
 
 
 --- 
 
 
 ### 🔒 Subnet as a Data Encryption Layer for Bittensor
-- ✅ **Neural Encrypted Conversations:** The subnet offers an additional benefit regarding privacy. If users or companies utilize a subnet to transform their context into condensed tokens before sending them to other LLM services, this approach can help prevent context leaks. The transformation increases the computational complexity, making it more difficult for unauthorized entities to extract the original context.
+- ✅ **Neural Encrypted Conversations:** Encrypts conversations into limited tokens
 
 
 ## 📚 Documentation
