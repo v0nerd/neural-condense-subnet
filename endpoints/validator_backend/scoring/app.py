@@ -92,8 +92,8 @@ class ScoringService:
                 padding=False,
                 add_special_tokens=False,
             )["input_ids"].to(model.device)
-            inputs = model.prepare_condensed_inputs(
-                miner_output.compressed_tokens, input_ids
+            inputs = self.prepare_condensed_inputs(
+                miner_output.compressed_tokens, input_ids, model.get_input_embeddings()
             )
             outputs = model(**inputs)
             logits = outputs.logits
