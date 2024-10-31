@@ -4,6 +4,10 @@
 
 </div>
 
+## Minimum Requirements for Baseline
+- GPU with at least 24GB of VRAM (RTX 4090, A6000, A100, H100, etc.) to run Baseline Model
+- CUDA, NVIDIA Driver installed
+
 ## What does a Miner do?
 
 A miner is a node that is responsible for condensing a long text into much shorter as condensed tokens. These condensed tokens are then used to feed to Large Language Models like Llama, Gemma, Mistral, etc.
@@ -42,15 +46,24 @@ pm2 start --name condense_backend \
 "python services/miner_backend/serving/icae_app.py --port 8080 --devices 1 --workers_per_device 1"
 ```
 
+4. Config your wallet, backend host, and port. Below just an example:
+```bash
+my_tier="inference_0"
+my_wallet="my_wallet"
+my_hotkey="my_hotkey"
+condense_backend_host="localhost"
+condense_backend_port=8080
+```
+
 4. Run the mining script
 ```bash
-pm2 start --name condense_miner \
--- python -m neurons.miner \
+pm2 start python --name condense_miner \
+-- -m neurons.miner \
 --netuid 52 \
 --subtensor.network finney \
---wallet.name my_wallet \
---wallet.key my_key \
---miner.tier my-tier \
---miner.backend_host localhost \
---miner.backend_port 8080
+--wallet.name $my_wallet \
+--wallet.hotkey $my_hotkey \
+--miner.tier $my_tier \
+--miner.backend_host $condense_backend_host \
+--miner.backend_port $condense_backend_port
 ```
