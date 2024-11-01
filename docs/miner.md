@@ -38,6 +38,7 @@ cd neural-condense-subnet
 2. Install the dependencies
 ```bash
 pip install -e .
+. services/miner_backend/serving/download_checkpoint.sh
 ```
 
 3. Run the miner backend. Example of using ICAE as a backend:
