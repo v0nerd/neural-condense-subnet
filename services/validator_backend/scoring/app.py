@@ -134,7 +134,7 @@ class ScoringService:
                 logits.view(-1, logits.shape[-1]), labels.view(-1), ignore_index=-100
             )
             losses.append(loss.item())
-
+        print("losses", losses)
         return losses
 
     def calculate_bleu_criteria(
