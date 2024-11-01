@@ -82,13 +82,6 @@ class ScoringService:
         losses = []
 
         for miner_output in request.miner_responses:
-            n_compressed_tokens = len(miner_output.compressed_tokens)
-            prefix_labels = torch.full(
-                (n_compressed_tokens,), -52, dtype=torch.long
-            ).to(model.device)
-            labels = torch.cat([prefix_labels, original_labels])
-            labels = labels.unsqueeze(0).to(model.device)
-            labels = labels[:, 1:].reshape(-1)
             activation_input_ids = tokenizer(
                 activation_prompt,
                 return_tensors="pt",
@@ -101,10 +94,18 @@ class ScoringService:
                 activation_input_ids,
                 model.get_input_embeddings(),
             )
+            n_ignore_labels = inputs.shape[1]
+            prefix_labels = torch.full(
+                (n_ignore_labels,), -100, dtype=torch.long
+            ).to(model.device)
+            labels = torch.cat([prefix_labels, original_labels])
+            labels = labels.unsqueeze(0).to(model.device)
+            labels = labels[:, 1:].reshape(-1)
             outputs = model(**inputs)
             logits = outputs.logits
             effective_logits = logits[:, :-1, :].reshape(-1, logits.shape[-1])
-            loss = F.cross_entropy(effective_logits, labels, ignore_index=-52)
+            print(logits.shape, effective_logits.shape, labels.shape)
+            loss = F.cross_entropy(effective_logits, labels, ignore_index=-100)
             losses.append(loss.item())
         scores = loss_to_scores(losses)
         return scores
