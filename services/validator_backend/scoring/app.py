@@ -80,10 +80,10 @@ class ScoringService:
 
         activation_prompt_tokens = tokenizer(
             activation_prompt, return_tensors="pt", add_special_tokens=False
-        ).input_ids
+        ).input_ids.to(device)
         expected_completion_tokens = tokenizer(
             expected_completion, return_tensors="pt", add_special_tokens=False
-        ).input_ids
+        ).input_ids.to(device)
 
         activation_prompt_embeddings = model.get_input_embeddings()(
             activation_prompt_tokens
@@ -97,11 +97,9 @@ class ScoringService:
         losses = []
 
         for miner_response in request.miner_responses:
-            compressed_tokens = torch.tensor(
-                miner_response.compressed_tokens
-            ).unsqueeze(
-                0
-            )  # Shape (1, small_seq_len, hidden_size)
+            compressed_tokens = (
+                torch.tensor(miner_response.compressed_tokens).unsqueeze(0).to(device)
+            )  # Shape (1, total_seq_len, hidden_size)
             inputs_embeddings = torch.cat(
                 [
                     compressed_tokens,
@@ -109,17 +107,13 @@ class ScoringService:
                     expected_completion_embeddings,
                 ],
                 dim=1,
-            ).to(
-                device
-            )  # Shape (1, total_seq_len, hidden_size)
+            ).to(device)
 
             labels = torch.cat(
                 [
                     torch.full(
                         (1, compressed_tokens.shape[1]), -100, dtype=torch.long
-                    ).to(
-                        device
-                    ),  # -100 is the ignore index for CrossEntropyLoss
+                    ).to(device),
                     activation_prompt_tokens,
                     expected_completion_tokens,
                 ],
