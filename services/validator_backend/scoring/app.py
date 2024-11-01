@@ -95,9 +95,9 @@ class ScoringService:
                 model.get_input_embeddings(),
             )
             n_ignore_labels = inputs.shape[1]
-            prefix_labels = torch.full(
-                (n_ignore_labels,), -100, dtype=torch.long
-            ).to(model.device)
+            prefix_labels = torch.full((n_ignore_labels,), -100, dtype=torch.long).to(
+                model.device
+            )
             labels = torch.cat([prefix_labels, original_labels])
             labels = labels.unsqueeze(0).to(model.device)
             labels = labels[:, 1:].reshape(-1)
@@ -212,8 +212,10 @@ class ScoringService:
         context_embeds = (
             self.models[model_name].get_input_embeddings()(context_ids).squeeze(0)
         )
-        compressed_tokens = context_embeds.detach().cpu().numpy().tolist()
-        miner_response = ScoringRequest(compressed_tokens=[compressed_tokens])
+        compressed_tokens = context_embeds.detach().cpu().numpy()
+        print("unit-test", compressed_tokens.shape)
+        compressed_tokens = compressed_tokens.tolist()
+        miner_response = ScoringRequest(compressed_tokens=compressed_tokens)
         ground_truth_request = GroundTruthRequest(
             context=context,
             activation_prompt=activation_prompt,
