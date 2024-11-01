@@ -8,6 +8,11 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, MistralForCausalLM
 from .utils import loss_to_scores
 import threading
 import traceback
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
+logger = logging.getLogger("Validator-Backend")
 
 
 class ScoringRequest(BaseModel):
@@ -196,6 +201,8 @@ class ScoringService:
                         .lower()
                     )
                     expected_completion_lower = expected_completion.strip().lower()
+                    logger.info(f"Completion: {completion}")
+                    logger.info(f"Expected Completion: {expected_completion_lower}")
                     accuracy = self._llm_judge(
                         expected_completion_lower, completion, model, tokenizer
                     )
