@@ -4,7 +4,7 @@ from typing import List
 import torch.nn.functional as F
 import torch
 import numpy as np
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, MistralForCausalLM
 from .utils import loss_to_scores, calculate_bleu
 import threading
 
@@ -158,12 +158,13 @@ class ScoringService:
             )
             generated_outputs = model.generate(
                 inputs_embeds=inputs["inputs_embeds"],
-                max_length=64,
+                max_new_tokens=64,
                 num_return_sequences=1,
             )
             completion = tokenizer.decode(
                 generated_outputs[0], skip_special_tokens=True
             )
+            print(completion)
             bleu_score = calculate_bleu(
                 request.ground_truth_request.expected_completion, completion
             )
