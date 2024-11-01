@@ -62,7 +62,7 @@ class Constants(BaseModel):
         ),
         SyntheticTaskConfig(
             task="qa",
-            criterias=["bleu"],
+            criterias=["accuracy"],
             rewarding_frequency=1,
         ),
     ]

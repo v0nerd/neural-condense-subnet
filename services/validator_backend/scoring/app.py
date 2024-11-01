@@ -4,9 +4,15 @@ from typing import List
 import torch.nn.functional as F
 import torch
 import numpy as np
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from .utils import loss_to_scores, calculate_bleu
+from transformers import AutoTokenizer, AutoModelForCausalLM, MistralForCausalLM
+from .utils import loss_to_scores
 import threading
+import traceback
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
+logger = logging.getLogger("Validator-Backend")
 
 
 class ScoringRequest(BaseModel):
@@ -28,6 +34,10 @@ class BatchedScoringRequest(BaseModel):
 
 class ScoringService:
     def __init__(self):
+        """
+        Initializes the ScoringService with model and tokenizer storage, device configuration,
+        and a lock for thread-safe operations. Runs a unit test to verify setup.
+        """
         self.models = {}
         self.tokenizers = {}
         self.lock = threading.Lock()
@@ -35,197 +45,261 @@ class ScoringService:
         self.unit_test()
 
     def load_model(self, model_name: str):
+        """
+        Loads a specified model and tokenizer if not already loaded, ensuring thread safety.
+        """
         with self.lock:
-            if model_name not in self.models:
-                self.models[model_name] = AutoModelForCausalLM.from_pretrained(
-                    model_name
-                )
-                self.models[model_name].to(self.device)
-                self.tokenizers[model_name] = AutoTokenizer.from_pretrained(model_name)
+            try:
+                if model_name not in self.models:
+                    self.models[model_name] = AutoModelForCausalLM.from_pretrained(
+                        model_name
+                    )
+                    self.models[model_name].to(self.device)
+                    self.tokenizers[model_name] = AutoTokenizer.from_pretrained(
+                        model_name
+                    )
+            except Exception as e:
+                print(f"Error loading model {model_name}: {e}")
 
     @torch.no_grad()
     def get_scoring(self, request: BatchedScoringRequest):
-        model_name = request.ground_truth_request.model_name
-        self.load_model(model_name)
-        model = self.models[model_name]
-        tokenizer = self.tokenizers[model_name]
-        outputs = []
+        """
+        Returns scoring based on criteria specified in the request, such as loss and accuracy,
+        calculated from the given model and tokenizer.
+        """
+        try:
+            model_name = request.ground_truth_request.model_name
+            self.load_model(model_name)
+            model = self.models[model_name]
+            tokenizer = self.tokenizers[model_name]
+            outputs = []
 
-        if "loss" in request.ground_truth_request.criterias:
-            scores = self.calculate_loss_criteria(request, model, tokenizer)
-            outputs.append(scores)
+            if "loss" in request.ground_truth_request.criterias:
+                scores = self.calculate_loss_criteria(request, model, tokenizer)
+                outputs.append(scores)
 
-        if "bleu" in request.ground_truth_request.criterias:
-            scores = self.calculate_bleu_criteria(request, model, tokenizer)
-            outputs.append(scores)
+            if "accuracy" in request.ground_truth_request.criterias:
+                scores = self.calculate_accuracy_criteria(request, model, tokenizer)
+                outputs.append(scores)
 
-        scores = np.mean(outputs, axis=0)
-        return {
-            "scores": scores.tolist()
-        }  # Convert numpy array to list for JSON serialization
+            scores = np.mean(outputs, axis=0)
+            return {"scores": scores.tolist()}
+        except Exception as e:
+            traceback.print_exc()
+            print(f"Error in get_scoring: {e}")
+            return {"scores": []}
 
-    def calculate_loss_criteria(
-        self, request: BatchedScoringRequest, model, tokenizer
-    ) -> np.ndarray:
-        original_labels = (
-            tokenizer(
-                request.ground_truth_request.expected_completion,
-                return_tensors="pt",
-                truncation=False,
-                padding=False,
-                add_special_tokens=False,
-            )["input_ids"]
-            .squeeze(0)
-            .to(model.device)
-        )
+    def calculate_loss_criteria(self, request: BatchedScoringRequest, model, tokenizer):
+        """
+        Calculates the loss-based scores by comparing expected and generated tokens based
+        on the activation prompt and expected completion.
+        """
+        device = model.device
         activation_prompt = request.ground_truth_request.activation_prompt
+        expected_completion = request.ground_truth_request.expected_completion
         losses = []
 
-        for miner_output in request.miner_responses:
-            n_compressed_tokens = len(miner_output.compressed_tokens)
-            prefix_labels = torch.full(
-                (n_compressed_tokens,), -52, dtype=torch.long
-            ).to(model.device)
-            labels = torch.cat([prefix_labels, original_labels])
-            labels = labels.unsqueeze(0).to(model.device)
-            labels = labels[:, 1:].reshape(-1)
-            activation_input_ids = tokenizer(
-                activation_prompt,
-                return_tensors="pt",
-                truncation=False,
-                padding=False,
-                add_special_tokens=False,
-            )["input_ids"].to(model.device)
-            inputs = self.prepare_condensed_inputs(
-                miner_output.compressed_tokens,
-                activation_input_ids,
-                model.get_input_embeddings(),
+        try:
+            activation_prompt_tokens = tokenizer(
+                activation_prompt, return_tensors="pt", add_special_tokens=False
+            ).input_ids.to(device)
+            expected_completion_tokens = tokenizer(
+                expected_completion, return_tensors="pt", add_special_tokens=False
+            ).input_ids.to(device)
+            activation_prompt_embeddings = model.get_input_embeddings()(
+                activation_prompt_tokens
             )
-            outputs = model(**inputs)
-            logits = outputs.logits
-            effective_logits = logits[:, :-1, :].reshape(-1, logits.shape[-1])
-            loss = F.cross_entropy(effective_logits, labels, ignore_index=-52)
-            losses.append(loss.item())
-        scores = loss_to_scores(losses)
-        return scores
+            expected_completion_embeddings = model.get_input_embeddings()(
+                expected_completion_tokens
+            )
 
-    def calculate_bleu_criteria(
+            for miner_response in request.miner_responses:
+                try:
+                    compressed_tokens = (
+                        torch.tensor(miner_response.compressed_tokens)
+                        .unsqueeze(0)
+                        .to(device)
+                    )
+                    inputs_embeddings = torch.cat(
+                        [
+                            compressed_tokens,
+                            activation_prompt_embeddings,
+                            expected_completion_embeddings,
+                        ],
+                        dim=1,
+                    ).to(device)
+
+                    labels = torch.cat(
+                        [
+                            torch.full(
+                                (1, compressed_tokens.shape[1]), -100, dtype=torch.long
+                            ).to(device),
+                            activation_prompt_tokens,
+                            expected_completion_tokens,
+                        ],
+                        dim=1,
+                    ).to(device)
+
+                    labels = labels[:, 1:]
+                    outputs = model(inputs_embeds=inputs_embeddings)
+                    logits = outputs.logits[:, :-1, :]
+
+                    loss = F.cross_entropy(
+                        logits.view(-1, logits.shape[-1]),
+                        labels.view(-1),
+                        ignore_index=-100,
+                    )
+                    losses.append(loss.item())
+                except Exception as e:
+                    print(f"Error in calculate_loss_criteria loop: {e}")
+                    losses.append(1000)
+            scores = loss_to_scores(losses)
+            logger.info(f"Losses: {losses}")
+            return scores
+        except Exception as e:
+            print(f"Error in calculate_loss_criteria: {e}")
+            return []
+
+    def calculate_accuracy_criteria(
         self, request: BatchedScoringRequest, model, tokenizer
-    ) -> np.ndarray:
-        activation_prompt = request.ground_truth_request.activation_prompt
-        bleu_scores = []
-
-        for miner_output in request.miner_responses:
-            activation_input_ids = tokenizer(
-                activation_prompt,
-                return_tensors="pt",
-                truncation=False,
-                padding=False,
-                add_special_tokens=False,
-            )["input_ids"].to(model.device)
-            inputs = self.prepare_condensed_inputs(
-                miner_output.compressed_tokens,
-                activation_input_ids,
-                model.get_input_embeddings(),
-            )
-            generated_outputs = model.generate(
-                inputs_embeds=inputs["input_embeds"],
-                max_length=64,
-                num_return_sequences=1,
-            )
-            completion = tokenizer.decode(
-                generated_outputs[0], skip_special_tokens=True
-            )
-            bleu_score = calculate_bleu(
-                request.ground_truth_request.expected_completion, completion
-            )
-            bleu_scores.append(bleu_score)
-
-        bleu_scores = np.array(bleu_scores)
-        # Normalize BLEU scores if sum is not zero
-        total = np.sum(bleu_scores)
-        if total > 0:
-            bleu_scores = bleu_scores / total
-        else:
-            bleu_scores = np.zeros_like(bleu_scores)
-        return bleu_scores
-
-    def prepare_condensed_inputs(
-        self,
-        condensed_tokens: List[List[float]],
-        input_ids: List[int],
-        embed_tokens: torch.nn.Embedding,
-        device="cuda",
     ):
-        r"""
-        Prepare the inputs for the model.
-        Args:
-        - condensed_tokens (List[List[float]]): The condensed tokens.
-        - input_ids (List[int]): The input ids to be concatenated with the condensed tokens.
-        Returns:
-        - inputs (dict): The inputs for the model.
         """
-        if isinstance(input_ids, list):
-            input_ids = torch.LongTensor(input_ids).unsqueeze(0)
-        else:
-            assert isinstance(input_ids, torch.Tensor)
-        if isinstance(condensed_tokens, list):
-            condensed_tokens = torch.FloatTensor(condensed_tokens).unsqueeze(0)
-        else:
-            assert isinstance(condensed_tokens, torch.Tensor)
-        if condensed_tokens.dim() == 2:
-            condensed_tokens = condensed_tokens.unsqueeze(0)
+        Calculates accuracy-based scores by generating responses from miner responses,
+        comparing them to the expected completion.
+        """
+        device = model.device
+        activation_prompt = request.ground_truth_request.activation_prompt
+        expected_completion = request.ground_truth_request.expected_completion
+        accuracy_scores = []
 
-        input_tokens = embed_tokens(input_ids)
-        condensed_tokens = condensed_tokens.to(input_tokens.device)
-        print(condensed_tokens.shape, input_tokens.shape)
-        inputs_embeds = torch.cat([condensed_tokens, input_tokens], dim=1)
-        inputs_embeds = inputs_embeds.to(device)
-        return {"inputs_embeds": inputs_embeds}
+        try:
+            activation_prompt_tokens = tokenizer(
+                activation_prompt, return_tensors="pt", add_special_tokens=False
+            ).input_ids.to(device)
+            activation_prompt_embeddings = model.get_input_embeddings()(
+                activation_prompt_tokens
+            )
+
+            for miner_output in request.miner_responses:
+                try:
+                    compressed_tokens = (
+                        torch.tensor(miner_output.compressed_tokens)
+                        .unsqueeze(0)
+                        .to(device)
+                    )
+                    inputs_embeds = torch.cat(
+                        [compressed_tokens, activation_prompt_embeddings], dim=1
+                    ).to(device)
+
+                    generated_outputs = model.generate(
+                        inputs_embeds=inputs_embeds,
+                        max_new_tokens=64,
+                        num_return_sequences=1,
+                    )
+                    completion = (
+                        tokenizer.decode(generated_outputs[0], skip_special_tokens=True)
+                        .strip()
+                        .lower()
+                    )
+                    expected_completion_lower = expected_completion.strip().lower()
+                    logger.info(f"Completion: {completion}")
+                    logger.info(f"Expected Completion: {expected_completion_lower}")
+                    accuracy = self._llm_judge(
+                        expected_completion_lower, completion, model, tokenizer
+                    )
+                    accuracy_scores.append(accuracy)
+                except Exception as e:
+                    print(f"Error in calculate_accuracy_criteria loop: {e}")
+                    accuracy_scores.append(0)
+            return accuracy_scores
+        except Exception as e:
+            traceback.print_exc()
+            print(f"Error in calculate_accuracy_criteria: {e}")
+            return []
 
     def unit_test(self):
-        data = {
-            "context": "French senior civil servant arrested on suspicion of spying for North Korea\n\nNovember 27, 2018 by Joseph Fitsanakis\n\nA senior civil servant in the upper house of the French parliament has been arrested on suspicion of spying for North Korea, according to prosecutors. The news of the suspected spy\u2019s arrest was first reported on Monday by Quotidien, a daily politics and culture show on the Monaco-based television channel TMC. The show cited \u201ca judicial source in Paris\u201d and said that France\u2019s domestic security and counterintelligence agency, the General Directorate for Internal Security (DGSI), was in charge of the espionage case.\n\nThe senior administrator has been identified as Benoit Quennedey, a civil servant who liaises between the French Senate and the Department of Architecture and Heritage, which operates under France\u2019s Ministry of Culture. Quennedey was reportedly detained on Sunday morning and his office in the French Senate was raided by DGSI officers on the same day. Quotidien said that he was arrested on suspicion of \u201ccollecting and delivering to a foreign power information likely to subvert core national interests\u201d. The report did not provide specific information about the type of information that Quennedey is believed to have passed to North Korea. It did state, however, that a counterintelligence investigation into his activities began in March of this year.\n\nQuennedey is believed to be the president of the Franco-Korean Friendship Association, the French branch of a Spanish-based organization that lobbies in favor of international support for North Korea. Korea Friendship Association branches exist in over 30 countries and are believed to be officially sanctioned by Pyongyang. They operate as something akin to the pre-World War II Comintern (Communist International), a Moscow-sanctioned international pressure group that advocated in favor of Soviet-style communism around the world. French media reported on Monday that Quennedey traveled extensively to the Korean Peninsula in the past decade and has written a French-language book on North Korea. News reports said that the French President Emmanuel Macron had been made aware of Quennedey\u2019s arrest. The senior civil servant faces up to 30 years in prison if found guilty of espionage.\n\n\u25ba Author: Joseph Fitsanakis | Date: 27 November 2018 | Permalink\n\n",
-            "activation_prompt": "Identify the person arrested on suspicion of spying for North Korea.",
-            "expected_completion": "Benoit Quennedey",
-        }
-        model_name = "Condense-AI/Mistral-7B-Instruct-v0.2"
-        criterias = ["loss", "bleu"]
+        """
+        Runs a basic unit test to verify the setup and scoring functions for a sample request.
+        """
+        try:
+            data = {
+                "context": "<s> [INST] Provided the context: French senior civil servant arrested on suspicion of spying for North Korea\n\nNovember 27, 2018 by Joseph Fitsanakis\n\nA senior civil servant in the upper house of the French parliament has been arrested on suspicion of spying for North Korea, according to prosecutors. The news of the suspected spy\u2019s arrest was first reported on Monday by Quotidien, a daily politics and culture show on the Monaco-based television channel TMC. The show cited \u201ca judicial source in Paris\u201d and said that France\u2019s domestic security and counterintelligence agency, the General Directorate for Internal Security (DGSI), was in charge of the espionage case.\n\nThe senior administrator has been identified as Benoit Quennedey, a civil servant who liaises between the French Senate and the Department of Architecture and Heritage, which operates under France\u2019s Ministry of Culture. Quennedey was reportedly detained on Sunday morning and his office in the French Senate was raided by DGSI officers on the same day. Quotidien said that he was arrested on suspicion of \u201ccollecting and delivering to a foreign power information likely to subvert core national interests\u201d. The report did not provide specific information about the type of information that Quennedey is believed to have passed to North Korea. It did state, however, that a counterintelligence investigation into his activities began in March of this year.\n\nQuennedey is believed to be the president of the Franco-Korean Friendship Association, the French branch of a Spanish-based organization that lobbies in favor of international support for North Korea. Korea Friendship Association branches exist in over 30 countries and are believed to be officially sanctioned by Pyongyang. They operate as something akin to the pre-World War II Comintern (Communist International), a Moscow-sanctioned international pressure group that advocated in favor of Soviet-style communism around the world. French media reported on Monday that Quennedey traveled extensively to the Korean Peninsula in the past decade and has written a French-language book on North Korea. News reports said that the French President Emmanuel Macron had been made aware of Quennedey\u2019s arrest. The senior civil servant faces up to 30 years in prison if found guilty of espionage.\n\n\u25ba Author: Joseph Fitsanakis | Date: 27 November 2018 | Permalink\n\n",
+                "activation_prompt": "Identify the person arrested on suspicion of spying for North Korea. [/INST]",
+                "expected_completion": "Benoit Quennedey",
+            }
+            model_name = "Condense-AI/Mistral-7B-Instruct-v0.2"
+            criterias = ["loss", "accuracy"]
 
-        # Create miner response fake from the model by converting context to embed_tokens
-        context = data["context"]
-        activation_prompt = data["activation_prompt"]
-        expected_completion = data["expected_completion"]
-        model_name = model_name
-        criterias = criterias
-        self.load_model(model_name)
+            self.load_model(model_name)
+            context_ids = self.tokenizers[model_name](
+                data["context"],
+                return_tensors="pt",
+                truncation=False,
+                padding=False,
+                add_special_tokens=False,
+            )["input_ids"].to(self.device)
 
-        context_ids = self.tokenizers[model_name](
-            context,
-            return_tensors="pt",
-            truncation=False,
-            padding=False,
-            add_special_tokens=False,
-        )["input_ids"].to(self.device)
+            context_embeds = (
+                self.models[model_name].get_input_embeddings()(context_ids).squeeze(0)
+            )
+            compressed_tokens = context_embeds.detach().cpu().numpy().tolist()
 
-        context_embeds = (
-            self.models[model_name].get_input_embeddings()(context_ids).squeeze(0)
-        )
-        compressed_tokens = context_embeds.detach().cpu().numpy().tolist()
-        miner_response = ScoringRequest(compressed_tokens=[compressed_tokens])
-        ground_truth_request = GroundTruthRequest(
-            context=context,
-            activation_prompt=activation_prompt,
-            expected_completion=expected_completion,
-            model_name=model_name,
-            criterias=criterias,
-        )
-        request = BatchedScoringRequest(
-            miner_responses=[miner_response], ground_truth_request=ground_truth_request
-        )
-        scores = self.get_scoring(request)
+            miner_response = ScoringRequest(compressed_tokens=compressed_tokens)
+            ground_truth_request = GroundTruthRequest(
+                context=data["context"],
+                activation_prompt=data["activation_prompt"],
+                expected_completion=data["expected_completion"],
+                model_name=model_name,
+                criterias=criterias,
+            )
+            request = BatchedScoringRequest(
+                miner_responses=[miner_response],
+                ground_truth_request=ground_truth_request,
+            )
+            scores = self.get_scoring(request)
+            print(scores)
 
-        print(scores)
+            ground_truth_request.activation_prompt = (
+                "Write exactly the same context as provided. [/INST]"
+            )
+            ground_truth_request.expected_completion = data["context"]
+
+            request = BatchedScoringRequest(
+                miner_responses=[miner_response],
+                ground_truth_request=ground_truth_request,
+            )
+            scores = self.get_scoring(request)
+            print(scores)
+        except Exception as e:
+            print(f"Error in unit_test: {e}")
+
+    def _llm_judge(
+        self, expected_completion, completion, model, tokenizer, max_new_tokens=16
+    ):
+        """
+        Generates a yes or no judgment on the accuracy of the model's completion compared to
+        the expected completion.
+        """
+        try:
+            prompt = f"Task description: Given a ground truth completion and a model completion, answer yes if the model completion is correct, and no otherwise. - Ground truth completion: {expected_completion} - Model completion: {completion} Result:"
+            input_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(
+                model.device
+            )
+            generated_outputs = model.generate(
+                input_ids=input_ids,
+                max_new_tokens=max_new_tokens,
+                num_return_sequences=1,
+            )
+            completion_text = (
+                tokenizer.decode(generated_outputs[0], skip_special_tokens=True)
+                .strip()
+                .lower()
+            )
+            return "yes" in completion_text
+        except Exception as e:
+            traceback.print_exc()
+            print(f"Error in _llm_judge: {e}")
+            return True
 
 
 app = FastAPI()
@@ -234,9 +308,19 @@ scoring_service = ScoringService()
 
 @app.get("/")
 def is_alive():
+    """
+    Endpoint to check if the service is running and responsive.
+    """
     return {"message": "I'm alive!"}
 
 
 @app.post("/scoring")
 def get_scoring(request: BatchedScoringRequest):
-    return scoring_service.get_scoring(request)
+    """
+    Endpoint to receive a batched scoring request and return calculated scores.
+    """
+    try:
+        return scoring_service.get_scoring(request)
+    except Exception as e:
+        print(f"Error in /scoring endpoint: {e}")
+        return {"error": "Failed to calculate scores"}
