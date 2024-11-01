@@ -65,58 +65,84 @@ class ScoringService:
         }  # Convert numpy array to list for JSON serialization
 
     def calculate_loss_criteria(
-        self, request: BatchedScoringRequest, model, tokenizer
+        self,
+        request: BatchedScoringRequest,
+        model,
+        tokenizer,
     ):
+        # Prepare the input sequence
+
+        device = model.device
+
+        context = request.ground_truth_request.context
+        activation_prompt = request.ground_truth_request.activation_prompt
+        expected_completion = request.ground_truth_request.expected_completion
+
+        activation_prompt_tokens = tokenizer(
+            activation_prompt, return_tensors="pt", add_special_tokens=False
+        ).input_ids
+        expected_completion_tokens = tokenizer(
+            expected_completion, return_tensors="pt", add_special_tokens=False
+        ).input_ids
+
+        activation_prompt_embeddings = model.get_input_embeddings()(
+            activation_prompt_tokens
+        )
+
+        expected_completion_embeddings = model.get_input_embeddings()(
+            expected_completion_tokens
+        )
+
+        # Prepare loss list for miner responses
         losses = []
+
         for miner_response in request.miner_responses:
-            # Convert compressed tokens to tensor
-            compressed_tokens = torch.tensor(miner_response.compressed_tokens)  # Shape: (small_seq_len, hidden_size)
+            compressed_tokens = torch.tensor(
+                miner_response.compressed_tokens
+            ).unsqueeze(
+                0
+            )  # Shape (1, small_seq_len, hidden_size)
+            inputs_embeddings = torch.cat(
+                [
+                    compressed_tokens,
+                    activation_prompt_embeddings,
+                    expected_completion_embeddings,
+                ],
+                dim=1,
+            ).to(
+                device
+            )  # Shape (1, total_seq_len, hidden_size)
 
-            # Get activation_prompt and expected_completion
-            activation_prompt = request.ground_truth_request.activation_prompt
-            expected_completion = request.ground_truth_request.expected_completion
+            labels = torch.cat(
+                [
+                    torch.full(
+                        (1, compressed_tokens.shape[1]), -100, dtype=torch.long
+                    ).to(
+                        device
+                    ),  # -100 is the ignore index for CrossEntropyLoss
+                    activation_prompt_tokens,
+                    expected_completion_tokens,
+                ],
+                dim=1,
+            ).to(
+                device
+            )  # Shape (1, total_seq_len)
 
-            # Tokenize activation_prompt and expected_completion
-            activation_inputs = tokenizer(activation_prompt, return_tensors='pt', add_special_tokens=False)
-            expected_inputs = tokenizer(expected_completion, return_tensors='pt', add_special_tokens=False)
+            labels = labels[:, 1:]  # Remove the first token from the labels
 
-            # Get embeddings for activation_prompt and expected_completion
-            activation_embeddings = model.get_input_embeddings()(activation_inputs.input_ids).squeeze(0)  # Shape: (activation_seq_len, hidden_size)
-            expected_embeddings = model.get_input_embeddings()(expected_inputs.input_ids).squeeze(0)      # Shape: (expected_seq_len, hidden_size)
+            outputs = model(
+                inputs_embeds=inputs_embeddings,
+            )
+            logits = outputs.logits
+            logits = logits[:, :-1, :]  # Remove the last token from the logits
 
-            # Concatenate compressed_tokens, activation_embeddings, and expected_embeddings
-            full_embeddings = torch.cat([compressed_tokens, activation_embeddings, expected_embeddings], dim=0)  # Shape: (total_seq_len, hidden_size)
-            full_embeddings = full_embeddings.unsqueeze(0)  # Add batch dimension: Shape: (1, total_seq_len, hidden_size)
-
-            # Prepare attention mask
-            total_seq_len = full_embeddings.size(1)
-            attention_mask = torch.ones((1, total_seq_len), dtype=torch.long)  # Shape: (1, total_seq_len)
-
-            # Prepare labels with -100 for non-expected_completion tokens
-            labels = torch.full((1, total_seq_len), -100, dtype=torch.long)  # Shape: (1, total_seq_len)
-            compressed_len = compressed_tokens.size(0)
-            activation_len = activation_embeddings.size(0)
-            expected_len = expected_inputs.input_ids.size(1)
-
-            # Set labels for expected_completion tokens
-            start_idx = compressed_len + activation_len
-            end_idx = start_idx + expected_len
-            labels[0, start_idx:end_idx] = expected_inputs.input_ids
-
-            # Move tensors to the same device as the model
-            device = model.device
-            full_embeddings = full_embeddings.to(device)
-            attention_mask = attention_mask.to(device)
-            labels = labels.to(device)
-
-            # Forward pass through the model
-            outputs = model(inputs_embeds=full_embeddings, attention_mask=attention_mask, labels=labels)
-
-            # Calculate loss
-            loss = outputs.loss
+            loss = F.cross_entropy(
+                logits.view(-1, logits.shape[-1]), labels.view(-1), ignore_index=-100
+            )
             losses.append(loss.item())
 
         return losses
+
     def calculate_bleu_criteria(
         self, request: BatchedScoringRequest, model, tokenizer
     ) -> np.ndarray:
