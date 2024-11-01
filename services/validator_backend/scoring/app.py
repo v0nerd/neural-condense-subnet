@@ -7,6 +7,7 @@ import numpy as np
 from transformers import AutoTokenizer, AutoModelForCausalLM, MistralForCausalLM
 from .utils import loss_to_scores
 import threading
+import traceback
 
 
 class ScoringRequest(BaseModel):
@@ -79,6 +80,7 @@ class ScoringService:
             scores = np.mean(outputs, axis=0)
             return {"scores": scores.tolist()}
         except Exception as e:
+            traceback.print_exc()
             print(f"Error in get_scoring: {e}")
             return {"scores": []}
 
@@ -203,6 +205,7 @@ class ScoringService:
                     accuracy_scores.append(0)
             return accuracy_scores
         except Exception as e:
+            traceback.print_exc()
             print(f"Error in calculate_accuracy_criteria: {e}")
             return []
 
@@ -252,6 +255,7 @@ class ScoringService:
                 "Write exactly the same context as provided."
             )
             ground_truth_request.expected_completion = data["context"]
+            ground_truth_request.criterias = ["loss"]
 
             request = BatchedScoringRequest(
                 miner_responses=[miner_response],
@@ -271,7 +275,9 @@ class ScoringService:
         """
         try:
             prompt = f"Task description: Given a ground truth completion and a model completion, answer yes if the model completion is correct, and no otherwise. - Ground truth completion: {expected_completion} - Model completion: {completion} Result:"
-            input_ids = tokenizer(prompt, return_tensors="pt").input_ids
+            input_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(
+                model.device
+            )
             generated_outputs = model.generate(
                 input_ids=input_ids,
                 max_new_tokens=max_new_tokens,
@@ -284,6 +290,7 @@ class ScoringService:
             )
             return "yes" in completion_text
         except Exception as e:
+            traceback.print_exc()
             print(f"Error in _llm_judge: {e}")
             return True
 
