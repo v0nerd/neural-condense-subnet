@@ -31,7 +31,7 @@ pip install -e .
 3. Run the miner backend. Example of using ICAE as a backend:
 ```bash
 pm2 start --name condense_validator_backend \
-"uvicorn services.validator_backend.scoring.app:app --port 8080 host 0.0.0.0"
+"uvicorn services.validator_backend.scoring.app:app --port 8080 --host 0.0.0.0"
 ```
 
 4. Config your wallet, backend host, and port. Below just an example:
@@ -50,6 +50,6 @@ pm2 start python --name condense_validator \
 --subtensor.network finney \
 --wallet.name $my_wallet \
 --wallet.hotkey $my_hotkey \
---validator.backend.host $condense_backend_host \
---miner.backend.host $condense_backend_port
+--validator.score_backend.host $condense_backend_host \
+--validator.score_backend.port $condense_backend_port
 ```
