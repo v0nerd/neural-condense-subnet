@@ -260,7 +260,7 @@ class ScoringService:
             print(scores)
 
             ground_truth_request.activation_prompt = (
-                "Write exactly the same context as provided."
+                "Write exactly the same context as provided. [/INST]"
             )
             ground_truth_request.expected_completion = data["context"]
 
