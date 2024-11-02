@@ -104,7 +104,7 @@ class OrganicGate:
                 axons=[target_axon],
                 synapse=synapse,
                 timeout=constants.TIER_CONFIG[request.tier].timeout,
-            )
+            )[0]
             compressed_tokens = np.array(response.compressed_tokens, dtype=np.float32)
             bt.logging.info(f"Compressed shape: {compressed_tokens.shape}")
             compressed_tokens = compressed_tokens.tolist()
