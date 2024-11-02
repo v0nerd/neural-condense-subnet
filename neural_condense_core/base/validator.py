@@ -75,6 +75,16 @@ class Validator(ABC):
             )
             bt.logging.info(f"Running validator on uid: {self.my_subnet_uid}")
 
+    def setup_axon(self):
+        self.axon = bt.axon(wallet=self.wallet, config=self.config)
+        bt.logging.info(
+            f"Serving axon on network: {self.config.subtensor.network} with netuid: {self.config.netuid}"
+        )
+        self.axon.serve(netuid=self.config.netuid, subtensor=self.subtensor)
+        bt.logging.info(f"Axon: {self.axon}")
+        bt.logging.info(f"Starting axon server on port: {self.config.axon.port}")
+        self.axon.start()
+
     def node_query(self, module, method, params):
         try:
             result = self.node.query(module, method, params).value
@@ -104,6 +114,7 @@ class Validator(ABC):
         pass
 
     def run(self):
+        self.setup_axon()
         bt.logging.info("Starting validator loop.")
         while True:
             start_epoch = time.time()

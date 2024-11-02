@@ -35,11 +35,14 @@ pm2 start --name condense_validator_backend \
 ```
 
 4. Config your wallet, backend host, and port. Below just an example:
+**Important**: `axon_port` and `gate_port` must be opened in your firewall.
 ```bash
 my_wallet="my_wallet"
 my_hotkey="my_hotkey"
 condense_backend_host="localhost"
 condense_backend_port=8080
+axon_port=12345
+gate_port=12346
 ```
 
 5. Run the validator script
@@ -50,6 +53,8 @@ pm2 start python --name condense_validator \
 --subtensor.network finney \
 --wallet.name $my_wallet \
 --wallet.hotkey $my_hotkey \
---validator.score_backend.host $condense_backend_host \
---validator.score_backend.port $condense_backend_port
+--axon.port $axon_port \
+--validator.gate_port $gate_port \
+--validator.backend.host $condense_backend_host \
+--miner.backend.host $condense_backend_port
 ```
