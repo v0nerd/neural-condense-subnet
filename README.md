@@ -19,17 +19,17 @@
 - 🌐 **Seamless Integration**: Effortlessly integrates with LLM inference engines, such as transformers 🤗, vllm.
 - 🧩 **Token Compression**: The subnet API compresses long sequences of natural language tokens into soft tokens.
 - 🏛️ **Decentralized Network**: The subnet is a decentralized network that allows miners to contribute to the compression process.
-- 📊 **Tiered System**: The subnet has a tiered system, with a research tier for experimentation and an inference tier for production-scale use.
+- 📊 **Tiered System**: The subnet has a tiered system, with a research tier for experimentation and an inference tier for production-scale use. Incentive distribution is splitted for each tier.
 - 📏 **Benchmarking and Validation**: The subnet owner defines synthetic metrics to benchmark miners’ performance, ensuring quality and efficiency.
 
 ### ⚙️ Node Tiers
 
 
-| **Tier**       | **Purpose**                           | **Context Size**         | **Speed**     | **Supporting Models**               |
+| **Tier**       | **Purpose**                           | **Context Size**         | **Incentive Percentage**     | **Supporting Models**               |
 |----------------|---------------------------------------|---------------------------|---------------|--------------------------------------|
-| `research`     | Warmup tier for new LLM model releases | Flexible                  | Unrestricted  | `mistralai/Mistral-7B-Instruct-v0.2` |
-| `inference_0`  | Optimized for **long context** in popular LLMs | Up to 1536 tokens       | Fast         | `mistralai/Mistral-7B-Instruct-v0.2` |
-| `inference_1`  | Optimized for **very long context** in popular LLMs | Up to 4096 tokens       | Fast         | `mistralai/Mistral-7B-Instruct-v0.2` |
+| `research`     | Warmup tier for new LLM model releases | -                  | `20%`  | `mistralai/Mistral-7B-Instruct-v0.2` |
+| `inference_0`  | Optimized for **long context** in popular LLMs | Up to 3000 characters       | `40%`         | `mistralai/Mistral-7B-Instruct-v0.2` |
+| `inference_1`  | Optimized for **very long context** in popular LLMs | Up to 7000 characters       | `40%`         | `mistralai/Mistral-7B-Instruct-v0.2` |
 
 *Supporting models can be flexibly added based on tailored need.*
 

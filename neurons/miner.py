@@ -3,6 +3,8 @@ import httpx
 from typing import Tuple
 import bittensor as bt
 import numpy as np
+import time
+import traceback
 
 
 class Miner(ncc.BaseMiner):
@@ -11,12 +13,45 @@ class Miner(ncc.BaseMiner):
         self.blacklist_fns.append(self.blacklist_fn)
         self.forward_fns.append(self.forward_text_compress)
         self.setup_logging()
+        self._initialize_rate_limits()
+
+    def _initialize_rate_limits(self):
+        r"""
+        Initializes the rate limits for the miners.
+        """
         self.rate_limits = {
             uid: ncc.ServingCounter(rate_limit)
             for uid, rate_limit in ncc.build_rate_limit(
                 self.metagraph, self.config
             ).items()
         }
+
+    def run(self):
+        self.setup_axon()
+        bt.logging.info("Starting main loop")
+        step = 0
+        while True:
+            try:
+                # Periodically update our knowledge of the network graph.
+                if step % 60 == 0:
+                    self.metagraph.sync()
+                    self._initialize_rate_limits()
+                    log = (
+                        f"Block: {self.metagraph.block.item()} | "
+                        f"Incentive: {self.metagraph.I[self.my_subnet_uid]} | "
+                    )
+                    bt.logging.info(log)
+                step += 1
+                time.sleep(10)
+
+            except KeyboardInterrupt:
+                self.axon.stop()
+                bt.logging.success("Miner killed by keyboard interrupt.")
+                break
+            except Exception as e:
+                bt.logging.error(f"Miner exception: {e}")
+                bt.logging.error(traceback.format_exc())
+                continue
 
     async def forward_text_compress(
         self, synapse: ncc.TextCompressProtocol

@@ -95,29 +95,3 @@ class Miner:
 
     def _blacklist_fn(self, synapse: Metadata) -> Tuple[bool, str]:
         return False, "Always pass."
-
-    def run(self):
-        self.setup_axon()
-        bt.logging.info("Starting main loop")
-        step = 0
-        while True:
-            try:
-                # Periodically update our knowledge of the network graph.
-                if step % 60 == 0:
-                    self.metagraph.sync()
-                    log = (
-                        f"Block: {self.metagraph.block.item()} | "
-                        f"Incentive: {self.metagraph.I[self.my_subnet_uid]} | "
-                    )
-                    bt.logging.info(log)
-                step += 1
-                time.sleep(10)
-
-            except KeyboardInterrupt:
-                self.axon.stop()
-                bt.logging.success("Miner killed by keyboard interrupt.")
-                break
-            except Exception as e:
-                bt.logging.error(f"Miner exception: {e}")
-                bt.logging.error(traceback.format_exc())
-                continue
