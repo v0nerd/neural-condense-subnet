@@ -100,11 +100,12 @@ class OrganicGate:
                 )
             target_axon = self.metagraph.axons[targeted_uid]
 
-            response: TextCompressProtocol = await self.dendrite.forward(
+            responses: TextCompressProtocol = await self.dendrite.forward(
                 axons=[target_axon],
                 synapse=synapse,
                 timeout=constants.TIER_CONFIG[request.tier].timeout,
-            )[0]
+            )
+            response = responses[0]
             compressed_tokens = np.array(response.compressed_tokens, dtype=np.float32)
             bt.logging.info(f"Compressed shape: {compressed_tokens.shape}")
             compressed_tokens = compressed_tokens.tolist()
