@@ -17,7 +17,7 @@ def build_rate_limit(metagraph, config, tier=None):
     rate_limits = {}
     for uid in whitelist_uids:
         normalized_stake = S[uid] / total_stake if total_stake > 0 else 0
-        rate_limits[uid] = max(int(rpe * normalized_stake), 2)
+        rate_limits[uid] = max(int(rpe * normalized_stake), 10)
 
     # Set rate limit to 0 for non-whitelisted UIDs
     for uid in range(len(S)):

@@ -82,7 +82,7 @@ class Constants(BaseModel):
         super().__init__(**data)
         network = os.getenv("NETWORK")
         if network == "test":
-            self.RPE_PERCENTAGE_FOR_SYNTHETIC = 1
+            self.RPE_PERCENTAGE_FOR_SYNTHETIC = 0.6
             self.EPOCH_LENGTH = 60
             self.MIN_STAKE = 0
             self.ORGANIC_CLIENT_URL = "https://testnet-ncs-client.condenses.ai"
