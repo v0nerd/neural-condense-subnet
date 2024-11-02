@@ -191,7 +191,7 @@ class Validator(ncc.BaseValidator):
         if self.current_block > self.last_update + ncc.constants.SUBNET_TEMPO:
             bt.logging.info(f"Setting weights: {weights}")
             result = self.subtensor.set_weights(
-                netuid=self.netuid,
+                netuid=self.config.netuid,
                 wallet=self.wallet,
                 uids=self.metagraph.uids,
                 weights=weights,
