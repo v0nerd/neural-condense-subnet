@@ -61,10 +61,18 @@ class Challenger:
 
         # Get QA context
         qa_dataset = random.choice(self.qa_datasets)
-        for item in qa_dataset:
+        total_context_chars = 0
+
+        while True:
+            try:
+                item = next(qa_dataset)
+            except StopIteration:
+                break
+
             context = item["context"]
             if total_context_chars + len(context) >= max_context_length_in_chars:
                 break
+
             question = item["question"]
             answer = item["answer"]
             contexts.append(context)
@@ -210,11 +218,15 @@ class Challenger:
             str: The concatenated conversation string.
         """
         format_of_a_turn = "User: {user}\nAssistant: {assistant}"
-        for i in range(2, len(conversations), 2):
-            conversations[i]["content"] = format_of_a_turn.format(
-                user=conversations[i]["content"],
-                assistant=conversations[i + 1]["content"],
+        conversation_as_strings = []
+        for i in range(1, len(conversations), 2):
+            user_message = conversations[i - 1]["content"]
+            assistant_message = conversations[i]["content"]
+            conversation_as_strings.append(
+                format_of_a_turn.format(user=user_message, assistant=assistant_message)
             )
+
+        return "\n".join(conversation_as_strings), format_of_a_turn
 
     def _assemble_conversations(
         self, n_turns: int = None, include_last_assistant: bool = True
@@ -283,7 +295,7 @@ class Challenger:
             List[IterableDataset]: A list of QA datasets.
         """
         datasets = [load_custom_dataset("qa_zre")]
-        return [ds.shuffle() for ds in datasets]
+        return [iter(ds.shuffle()) for ds in datasets]
 
     def _load_raw_dataset(self) -> List[IterableDataset]:
         """
@@ -295,7 +307,7 @@ class Challenger:
         datasets = [
             load_dataset("gair-prox/FineWeb-pro", streaming=True, split="train")
         ]
-        return [ds.shuffle() for ds in datasets]
+        return [iter(ds.shuffle()) for ds in datasets]
 
     def _load_conversation_dataset(self) -> List[IterableDataset]:
         """
