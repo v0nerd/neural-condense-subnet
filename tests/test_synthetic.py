@@ -9,20 +9,24 @@ challenger = Challenger()
 time_logs = {
     "qa": 0,
     "ae": 0,
+    "conversational": 0,
 }
 n_loop = 1
 pbar = tqdm(range(n_loop * 2))
 for _ in range(n_loop):
-    for task in ["qa", "ae"]:
+    for task in ["qa", "ae", "conversational"]:
         start = time.time()
         protocol = challenger(tokenizer, task)
+        print("START")
+        print(protocol.context)
+        print("-" * 50)
+        print(protocol.activation_prompt)
+        print("-" * 50)
+        print(protocol.expected_completion)
+        print("-" * 50)
         end = time.time()
         time_logs[task] += end - start
         pbar.update(1)
-
-print(protocol.context)
-print(protocol.activation_prompt)
-print(protocol.expected_completion)
 
 time_logs = {k: v / n_loop for k, v in time_logs.items()}
 print(time_logs)

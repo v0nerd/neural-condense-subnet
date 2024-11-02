@@ -4,14 +4,17 @@ from transformers import AutoTokenizer
 import re
 import random
 from .custom_dataset_loaders import load_custom_dataset
-from typing import Iterator
+from typing import Iterator, List, Dict
 import tqdm
 
 
 class Challenger:
     def __init__(self):
-        self.raw_datasets: list[IterableDataset] = self._load_raw_dataset()
-        self.qa_datasets: list[IterableDataset] = self._load_qa_dataset()
+        self.raw_datasets: List[IterableDataset] = self._load_raw_dataset()
+        self.qa_datasets: List[IterableDataset] = self._load_qa_dataset()
+        self.conversation_datasets: List[IterableDataset] = (
+            self._load_conversation_dataset()
+        )
         self.sat = "[START-ACTIVATE-TOKEN]"
         self.eat = "[END-ACTIVATE-TOKEN]"
 
@@ -21,59 +24,74 @@ class Challenger:
         task: str = "",
         max_context_length_in_chars: int = 1536,
     ) -> TextCompressProtocol:
-        r"""
-        Get a sample for the given task.
+        """
+        Generate a sample challenge based on the specified task.
+
         Args:
-        - task (str): The task.
-        - tokenizer (AutoTokenizer): The tokenizer to be used.
+            tokenizer (AutoTokenizer): The tokenizer to be used.
+            task (str, optional): The task type ('qa', 'ae', or other). Defaults to "".
+            max_context_length_in_chars (int, optional): Maximum allowed context length in characters. Defaults to 1536.
+
+        Returns:
+            TextCompressProtocol: The protocol containing context, activation prompt, and expected completion.
         """
         if task == "qa":
             return self._get_qa_sample(tokenizer, max_context_length_in_chars)
+        elif task == "conversational":
+            return self._get_conversational_sample(
+                tokenizer, max_context_length_in_chars
+            )
         else:
             return self._get_ae_sample(tokenizer, max_context_length_in_chars)
 
-    def _get_context(self, max_context_length_in_chars: int) -> str:
-        r"""
-        Get a context that can be used for tasks.
-        Args:
-        - tokenizer (AutoTokenizer): The tokenizer to be used.
+    def _get_context(self, max_context_length_in_chars: int) -> Dict[str, str]:
         """
-        total_contexts_chars = 0
+        Gather context up to the specified maximum character length.
+
+        Args:
+            max_context_length_in_chars (int): Maximum allowed context length in characters.
+
+        Returns:
+            Dict[str, str]: A dictionary containing 'contexts', 'question', and 'answer'.
+        """
+        total_context_chars = 0
         contexts = []
         question = ""
         answer = ""
+
+        # Get QA context
         qa_dataset = random.choice(self.qa_datasets)
-        pbar = tqdm.tqdm(max_context_length_in_chars)
         for item in qa_dataset:
             context = item["context"]
-            if total_contexts_chars + len(context) >= max_context_length_in_chars:
+            if total_context_chars + len(context) >= max_context_length_in_chars:
                 break
             question = item["question"]
             answer = item["answer"]
             contexts.append(context)
-            total_contexts_chars += len(context)
-            pbar.write(f"contexts-char: {total_contexts_chars}")
-            pbar.update(len(context))
+            total_context_chars += len(context)
 
+        # Get raw text context
         raw_dataset = random.choice(self.raw_datasets)
-        for item in raw_dataset:
-            context = item["text"]
-            sentences = context.split(".")
-            is_full = False
+        total_context_chars = 0
+
+        while True:
+            try:
+                item = next(raw_dataset)
+            except StopIteration:
+                break
+
+            text = item["text"]
+            sentences = text.split(".")
+
             for sentence in sentences:
-                if total_contexts_chars + len(sentence) >= max_context_length_in_chars:
-                    is_full = True
+                if total_context_chars + len(sentence) >= max_context_length_in_chars:
                     break
                 contexts.append(sentence)
-                total_contexts_chars += len(sentence)
-                pbar.write(f"contexts-char: {total_contexts_chars}")
-                pbar.update(len(sentence))
-            if is_full:
-                break
-        pbar.close()
-        print(
-            f"Gathered {total_contexts_chars} characters for the context. Total contexts: {len(contexts)}"
-        )
+                total_context_chars += len(sentence)
+            else:
+                continue
+            break
+
         return {
             "contexts": contexts,
             "question": question,
@@ -83,132 +101,208 @@ class Challenger:
     def _get_qa_sample(
         self, tokenizer: AutoTokenizer, max_context_length_in_chars: int
     ) -> TextCompressProtocol:
-        r"""
-        Get a sample for the qa task.
-        In this task, the assistant is asked to answer a question given the context.
-        Args:
-        - tokenizer (AutoTokenizer): The tokenizer to be used.
         """
-        item = self._get_context(max_context_length_in_chars)
-        question = item["question"]
-        answer = item["answer"]
-        contexts = item["contexts"]
+        Generate a QA sample challenge.
 
+        Args:
+            tokenizer (AutoTokenizer): The tokenizer to be used.
+            max_context_length_in_chars (int): Maximum allowed context length in characters.
+
+        Returns:
+            TextCompressProtocol: The protocol for the QA challenge.
+        """
+        conversations, question, answer = self._get_conversations_mixed_with_context(
+            max_context_length_in_chars
+        )
+        conversations[-1]["content"] += self.sat
         prompt_after_context = f"\n\nAnswer the following question: {question}"
-
-        contexts_str = "\n".join(contexts)
-
-        messages = [
-            {
-                "role": "user",
-                "content": f"""Given the context: {contexts_str}.{self.sat} {prompt_after_context}{self.eat}""",
-            },
-            {
-                "role": "assistant",
-                "content": answer,
-            },
+        messages = conversations + [
+            {"role": "user", "content": prompt_after_context},
+            {"role": "assistant", "content": f"{self.eat}{answer}"},
         ]
 
-        messages_str = tokenizer.apply_chat_template(messages, tokenize=False)
-
-        context, activation_prompt, expected_completion = re.split(
-            f"{re.escape(self.sat)}|{re.escape(self.eat)}", messages_str
-        )
-
-        protocol = TextCompressProtocol(
-            context=context,
-            expected_completion=expected_completion,
-            activation_prompt=activation_prompt,
-        )
-        return protocol
+        return self._build_protocol(tokenizer, messages)
 
     def _get_ae_sample(
         self, tokenizer: AutoTokenizer, max_context_length_in_chars: int
     ) -> TextCompressProtocol:
-        r"""
-        Get a sample for the autoencoder task.
-        In this task, the assistant is asked to rewrite the same text given the context.
+        """
+        Generate an Autoencoder (AE) sample challenge.
+
         Args:
-        - tokenizer (AutoTokenizer): The tokenizer to be used.
-        - k (int): The length of the text to be compressed.
+            tokenizer (AutoTokenizer): The tokenizer to be used.
+            max_context_length_in_chars (int): Maximum allowed context length in characters.
+
+        Returns:
+            TextCompressProtocol: The protocol for the AE challenge.
+        """
+        conversations, _, _ = self._get_conversations_mixed_with_context(
+            max_context_length_in_chars
+        )
+        ae_target, format_of_a_turn = self._get_conversations_in_one_string(
+            conversations
+        )
+        conversations[-1]["content"] += self.sat
+        prompt_after_context = f"Rewrite whole conversation in a single string using the following format:\n{format_of_a_turn}. Each turn should be separated by a newline character."
+
+        messages = conversations + [
+            {"role": "user", "content": prompt_after_context},
+            {"role": "assistant", "content": f"{self.eat}{ae_target}"},
+        ]
+
+        return self._build_protocol(tokenizer, messages)
+
+    def _get_conversational_sample(
+        self, tokenizer: AutoTokenizer, max_context_length_in_chars: int
+    ) -> TextCompressProtocol:
+        """
+        Generate a conversational sample challenge where the assistant continues the conversation.
+
+        Args:
+            tokenizer (AutoTokenizer): The tokenizer to be used.
+            max_context_length_in_chars (int): Maximum allowed context length in characters.
+
+        Returns:
+            TextCompressProtocol: The protocol for the conversational challenge.
+        """
+        conversations = self._assemble_conversations(n_turns=random.choice([2, 3]))
+        expected_completion = conversations.pop()["content"]
+        prompt_after_context = conversations.pop()["content"]
+        conversations[-1]["content"] += self.sat
+
+        messages = conversations + [
+            {"role": "user", "content": prompt_after_context},
+            {"role": "assistant", "content": f"{self.eat}{expected_completion}"},
+        ]
+
+        return self._build_protocol(tokenizer, messages)
+
+    def _get_conversations_mixed_with_context(self, max_context_length_in_chars: int):
+        """
+        Get a mixed set of conversations and context.
+        Context is gathered from QA and raw text datasets.
+        Question & answer are relevant to the a piece of context.
         """
         item = self._get_context(max_context_length_in_chars)
-        contexts = item["contexts"]
-        contexts_str = "\n".join(contexts)
-        prompt_after_context = "\n\nRewrite exactly the same context."
-        messages = [
-            {
-                "role": "user",
-                "content": f"""Given the context: {contexts_str}.{self.sat} {prompt_after_context}{self.eat}""",
-            },
-            {
-                "role": "assistant",
-                "content": contexts_str,
-            },
-        ]
+        contexts_str = "\n".join(item["contexts"])
+        question = item["question"]
+        answer = item["answer"]
 
-        messages_str = tokenizer.apply_chat_template(messages, tokenize=False)
-
-        context, activation_prompt, expected_completion = re.split(
-            f"{re.escape(self.sat)}|{re.escape(self.eat)}", messages_str
+        conversations = self._assemble_conversations()
+        # index_to_insert_context should be even to insert context after user message
+        index_to_insert_context = random.choice(range(0, len(conversations), 2))
+        conversations[index_to_insert_context]["content"] = (
+            contexts_str + "\n" + conversations[index_to_insert_context]["content"]
         )
 
-        protocol = TextCompressProtocol(
-            context=context,
-            expected_completion=expected_completion,
-            activation_prompt=activation_prompt,
-        )
-        return protocol
+        return conversations, question, answer
 
-    def _load_qa_dataset(self) -> list[IterableDataset]:
-        r"""
-        Combine multiple QA datasets.
-        Return a combined dataset with the following schema:
-        ------------------------------
-        | contexts | question | answer |
-        ------------------------------
-        We filter with limited context length for easier to control in generating challenge.
-        We can increase the number of datasets by adding more datasets.
+    def _get_conversations_in_one_string(
+        self, conversations: List[Dict[str, str]]
+    ) -> str:
         """
-        datasets: list[IterableDataset] = [
-            load_custom_dataset("qa_zre"),
-        ]
-        datasets = [
-            ds.shuffle().filter(
-                lambda x: len(x["context"]) < 512
-                and self._is_mostly_alphabetic(x["context"])
+        Convert a list of conversations into a single string.
+        Format: "User: <User message>\nAssistant: <Assistant message>\nUser: <User message>..."
+        Args:
+            conversations (List[Dict[str, str]]): A list of conversation messages.
+
+        Returns:
+            str: The concatenated conversation string.
+        """
+        format_of_a_turn = "User: {user}\nAssistant: {assistant}"
+        for i in range(2, len(conversations), 2):
+            conversations[i]["content"] = format_of_a_turn.format(
+                user=conversations[i]["content"],
+                assistant=conversations[i + 1]["content"],
             )
-            for ds in datasets
-        ]
-        return datasets
 
-    def _load_raw_dataset(self) -> Iterator[dict]:
-        r"""
-        Load the raw dataset for ae task.
-        Raw dataset mean it only contains pieces of text.
-        We can increase it by adding more datasets but for now, we only use FineWeb-pro (64 million paragraphs).
+    def _assemble_conversations(
+        self, n_turns: int = None, include_last_assistant: bool = True
+    ) -> List[Dict[str, str]]:
         """
-        raw_datasets = [
+        Assemble a series of conversation turns.
+
+        Args:
+            n_turns (int, optional): Number of turns to include. Randomly chosen between 2 and 3 if not specified.
+            include_last_assistant (bool, optional): Whether to include the last assistant turn. Defaults to True.
+
+        Returns:
+            List[Dict[str, str]]: A list of conversation messages.
+        """
+        if n_turns is None:
+            n_turns = random.choice([2, 3])
+        conversations = []
+
+        for _ in range(n_turns):
+            convo_dataset = random.choice(self.conversation_datasets)
+            item = next(convo_dataset)
+            conversations.extend(
+                [
+                    {"role": "user", "content": item["user"]},
+                    {"role": "assistant", "content": item["assistant"]},
+                ]
+            )
+
+        if not include_last_assistant:
+            conversations = conversations[:-1]
+
+        return conversations
+
+    def _build_protocol(
+        self,
+        tokenizer: AutoTokenizer,
+        messages: List[Dict[str, str]],
+        expected_completion: str = None,
+    ) -> TextCompressProtocol:
+        """
+        Build the TextCompressProtocol from messages.
+
+        Args:
+            tokenizer (AutoTokenizer): The tokenizer to be used.
+            messages (List[Dict[str, str]]): The list of conversation messages.
+            expected_completion (str, optional): The expected completion text. If not provided, it will be extracted from messages.
+
+        Returns:
+            TextCompressProtocol: The constructed protocol.
+        """
+        messages_str = tokenizer.apply_chat_template(messages, tokenize=False)
+        parts = re.split(f"{re.escape(self.sat)}|{re.escape(self.eat)}", messages_str)
+        context, activation_prompt, expected_completion = parts
+
+        return TextCompressProtocol(
+            context=context.strip(),
+            activation_prompt=activation_prompt.strip(),
+            expected_completion=expected_completion.strip(),
+        )
+
+    def _load_qa_dataset(self) -> List[IterableDataset]:
+        """
+        Load and prepare QA datasets.
+
+        Returns:
+            List[IterableDataset]: A list of QA datasets.
+        """
+        datasets = [load_custom_dataset("qa_zre")]
+        return [ds.shuffle() for ds in datasets]
+
+    def _load_raw_dataset(self) -> List[IterableDataset]:
+        """
+        Load and prepare raw text datasets.
+
+        Returns:
+            List[IterableDataset]: A list of raw text datasets.
+        """
+        datasets = [
             load_dataset("gair-prox/FineWeb-pro", streaming=True, split="train")
         ]
-        raw_datasets = [
-            ds.shuffle().filter(lambda x: self._is_mostly_alphabetic(x["text"]))
-            for ds in raw_datasets
-        ]
-        return raw_datasets
+        return [ds.shuffle() for ds in datasets]
 
-    def _is_mostly_alphabetic(self, text: str, threshold: float = 0.5) -> bool:
+    def _load_conversation_dataset(self) -> List[IterableDataset]:
         """
-        Check if more than the specified threshold of characters in the text are alphabetic.
-        :param text: The input text to check.
-        :param threshold: The minimum proportion of alphabetic characters required.
-        :return: True if the proportion of alphabetic characters is above the threshold, False otherwise.
+        Load and prepare conversation datasets.
+
+        Returns:
+            List[IterableDataset]: A list of conversation datasets.
         """
-        alphabetic_count = sum(1 for char in text if char.isalpha())
-        total_count = len(text)
-
-        # Avoid division by zero
-        if total_count == 0:
-            return False
-
-        return alphabetic_count / total_count > threshold
+        datasets = [load_custom_dataset("open_hermes")]
+        return [iter(ds.shuffle()) for ds in datasets]

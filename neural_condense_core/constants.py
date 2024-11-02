@@ -65,6 +65,11 @@ class Constants(BaseModel):
             criterias=["accuracy"],
             rewarding_frequency=1,
         ),
+        SyntheticTaskConfig(
+            task="conversational",
+            criterias=["reward_model"],
+            rewarding_frequency=0,  # TODO: Implement rewarding for conversational task using reward model `Skywork/Skywork-Reward-Llama-3.1-8B-v0.2`
+        ),
     ]
 
     # Default values
