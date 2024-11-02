@@ -24,11 +24,11 @@ class Constants(BaseModel):
         "research": TierConfig(
             incentive_percentage=0.2,
             requests_per_epoch=1024,
-            timeout=24,
+            timeout=32,
             scoring_lambda=lambda x: x["normalized_score_in_batch"],
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
             max_condensed_tokens=1024,
-            max_context_length_in_chars=10000,
+            max_context_length_in_chars=8000,
         ),
         "inference_0": TierConfig(
             incentive_percentage=0.4,
