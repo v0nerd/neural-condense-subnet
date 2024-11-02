@@ -7,6 +7,7 @@ import uvicorn
 from concurrent.futures import ThreadPoolExecutor
 import random
 import httpx
+import numpy as np
 from ..constants import constants
 from ..protocol import TextCompressProtocol
 from ..validator_utils import MinerManager
@@ -70,40 +71,48 @@ class OrganicGate:
             raise Exception("Authentication failed.")
 
     async def forward(self, request: Request):
-        self._authenticate(request)
-        bt.logging.info("Forwarding organic request.")
-        request: OrganicPayload = OrganicPayload(**await request.json())
-        synapse = TextCompressProtocol(
-            context=request.context,
-            target_model=request.target_model,
-        )
-        bt.logging.info(f"Context: {request.context[:100]}...")
-        bt.logging.info(f"Tier: {request.tier}")
-        bt.logging.info(f"Target model: {request.target_model}")
-
-        targeted_uid = None
-        if request.miner_uid != -1:
-            targeted_uid = request.miner_uid
-        else:
-            for uid, counter in self.miner_manager.serving_counter[
-                request.tier
-            ].items():
-                if counter.increment():
-                    targeted_uid = uid
-                    break
-        if not targeted_uid:
-            raise HTTPException(
-                status_code=503,
-                detail="No miners available.",
+        try:
+            self._authenticate(request)
+            bt.logging.info("Forwarding organic request.")
+            request: OrganicPayload = OrganicPayload(**await request.json())
+            synapse = TextCompressProtocol(
+                context=request.context,
+                target_model=request.target_model,
             )
-        target_axon = self.metagraph.axons[targeted_uid]
+            bt.logging.info(f"Context: {request.context[:100]}...")
+            bt.logging.info(f"Tier: {request.tier}")
+            bt.logging.info(f"Target model: {request.target_model}")
 
-        response: TextCompressProtocol = await self.dendrite.forward(
-            axons=[target_axon],
-            synapse=synapse,
-            timeout=constants.TIER_CONFIG[request.tier].timeout,
-        )
-        return OrganicResponse(compressed_tokens=response.compressed_tokens)
+            targeted_uid = None
+            if request.miner_uid != -1:
+                targeted_uid = request.miner_uid
+            else:
+                for uid, counter in self.miner_manager.serving_counter[
+                    request.tier
+                ].items():
+                    if counter.increment():
+                        targeted_uid = uid
+                        break
+            if not targeted_uid:
+                raise HTTPException(
+                    status_code=503,
+                    detail="No miners available.",
+                )
+            target_axon = self.metagraph.axons[targeted_uid]
+
+            response: TextCompressProtocol = await self.dendrite.forward(
+                axons=[target_axon],
+                synapse=synapse,
+                timeout=constants.TIER_CONFIG[request.tier].timeout,
+            )
+            compressed_tokens = np.array(response.compressed_tokens, dtype=np.float32)
+            bt.logging.info(f"Compressed shape: {compressed_tokens.shape}")
+            compressed_tokens = compressed_tokens.tolist()
+        except Exception as e:
+            bt.logging.error(f"Error: {e}")
+            raise HTTPException(status_code=503, detail="Validator error.")
+
+        return OrganicResponse(compressed_tokens=compressed_tokens)
 
     def start_server(self):
         self.executor = ThreadPoolExecutor(max_workers=1)
