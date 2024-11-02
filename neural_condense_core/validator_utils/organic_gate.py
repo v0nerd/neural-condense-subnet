@@ -71,11 +71,15 @@ class OrganicGate:
 
     async def forward(self, request: Request):
         self._authenticate(request)
+        bt.logging.info("Forwarding organic request.")
         request: OrganicPayload = OrganicPayload(**await request.json())
         synapse = TextCompressProtocol(
             context=request.context,
             target_model=request.target_model,
         )
+        bt.logging.info(f"Context: {request.context[:100]}...")
+        bt.logging.info(f"Tier: {request.tier}")
+        bt.logging.info(f"Target model: {request.target_model}")
 
         targeted_uid = None
         if request.miner_uid != -1:

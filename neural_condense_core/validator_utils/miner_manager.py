@@ -5,10 +5,11 @@ import numpy as np
 from ..common import build_rate_limit
 from ..protocol import Metadata
 from ..constants import constants
+import threading
 
 
 class ServingCounter:
-    r"""
+    """
     A counter for rate limiting requests to a miner from this validator.
     - rate_limit: int, the maximum number of requests allowed per epoch.
     - counter: int, the current number of requests made in the current epoch.
@@ -17,13 +18,15 @@ class ServingCounter:
     def __init__(self, rate_limit: int):
         self.rate_limit = rate_limit
         self.counter = 0
+        self.lock = threading.Lock()
 
     def increment(self) -> bool:
-        r"""
+        """
         Increments the counter and returns True if the counter is less than or equal to the rate limit.
         """
-        self.counter += 1
-        return self.counter <= self.rate_limit
+        with self.lock:
+            self.counter += 1
+            return self.counter <= self.rate_limit
 
 
 class MinerManager:

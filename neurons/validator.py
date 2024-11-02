@@ -53,6 +53,7 @@ class Validator(ncc.BaseValidator):
             sleep_per_batch = ncc.constants.EPOCH_LENGTH // n_batch
         else:
             sleep_per_batch = ncc.constants.EPOCH_LENGTH
+            n_batch = bandwidth_to_synthetic
 
         log = (
             f"Tier: {tier}\n"
