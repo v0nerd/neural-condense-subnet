@@ -25,6 +25,8 @@ class TextCompressProtocol(Synapse):
     activation_prompt: str = ""
     target_model: str = ""
 
+    last_prompt: str = ""
+
     def get_miner_payload(self):
         r"""
         Get the input for the miner.
@@ -42,6 +44,7 @@ class TextCompressProtocol(Synapse):
         """
         self.expected_completion = ""
         self.activation_prompt = ""
+        self.last_prompt = ""
 
     def deserialize(self) -> Synapse:
         return {

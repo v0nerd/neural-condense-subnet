@@ -183,7 +183,9 @@ class Challenger:
             {"role": "assistant", "content": f"{self.eat}{expected_completion}"},
         ]
 
-        return self._build_protocol(tokenizer, messages)
+        protocol = self._build_protocol(tokenizer, messages)
+        protocol.last_prompt = prompt_after_context
+        return protocol
 
     def _get_conversations_mixed_with_context(self, max_context_length_in_chars: int):
         """
