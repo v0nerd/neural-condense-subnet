@@ -4,8 +4,11 @@ from ..constants import constants
 
 def build_rate_limit(metagraph, config, tier=None):
     S = metagraph.S
-    whitelist_uids = [i for i in range(len(S)) if S[i] > constants.MIN_STAKE]
-    bt.logging.debug(f"Whitelist uids: {whitelist_uids}")
+    if config.miner.whitelist_uids:
+        whitelist_uids = [int(uid) for uid in config.miner.whitelist_uids.split(",")]
+    else:
+        whitelist_uids = [i for i in range(len(S)) if S[i] > constants.MIN_STAKE]
+    bt.logging.info(f"Whitelist uids: {whitelist_uids}")
 
     selected_tier_config = constants.TIER_CONFIG[tier or config.miner.tier]
     rpe = selected_tier_config.requests_per_epoch

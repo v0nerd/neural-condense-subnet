@@ -10,11 +10,9 @@ import tqdm
 
 class Challenger:
     def __init__(self):
-        self.raw_datasets: List[IterableDataset] = self._load_raw_dataset()
-        self.qa_datasets: List[IterableDataset] = self._load_qa_dataset()
-        self.conversation_datasets: List[IterableDataset] = (
-            self._load_conversation_dataset()
-        )
+        self.raw_datasets: List[Iterator] = self._load_raw_dataset()
+        self.qa_datasets: List[Iterator] = self._load_qa_dataset()
+        self.conversation_datasets: List[Iterator] = self._load_conversation_dataset()
         self.sat = "[START-ACTIVATE-TOKEN]"
         self.eat = "[END-ACTIVATE-TOKEN]"
 
@@ -35,14 +33,16 @@ class Challenger:
         Returns:
             TextCompressProtocol: The protocol containing context, activation prompt, and expected completion.
         """
-        if task == "qa":
+        if task == "question_answering":
             return self._get_qa_sample(tokenizer, max_context_length_in_chars)
-        elif task == "conversational":
+        elif task == "conversation":
             return self._get_conversational_sample(
                 tokenizer, max_context_length_in_chars
             )
-        else:
+        elif task == "reconstruction":
             return self._get_ae_sample(tokenizer, max_context_length_in_chars)
+        else:
+            raise ValueError(f"Invalid task type: {task}")
 
     def _get_context(self, max_context_length_in_chars: int) -> Dict[str, str]:
         """

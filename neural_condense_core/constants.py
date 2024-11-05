@@ -35,7 +35,7 @@ class Constants(BaseModel):
             requests_per_epoch=1024,
             timeout=4,
             scoring_lambda=lambda x: max(
-                0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.4
+                0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.1
             ),
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
             max_condensed_tokens=256,
@@ -46,7 +46,7 @@ class Constants(BaseModel):
             requests_per_epoch=1024,
             timeout=4,
             scoring_lambda=lambda x: max(
-                0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.6
+                0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.1
             ),
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
             max_condensed_tokens=768,
@@ -56,19 +56,22 @@ class Constants(BaseModel):
 
     SYNTHETIC_TASK_CONFIG: List[SyntheticTaskConfig] = [
         SyntheticTaskConfig(
-            task="ae",
+            task="reconstruction",
             criterias=["loss"],
             rewarding_frequency=1,
+            weight=0.5,
         ),
         SyntheticTaskConfig(
-            task="qa",
+            task="question_answering",
             criterias=["accuracy"],
             rewarding_frequency=1,
+            weight=0.5,
         ),
         SyntheticTaskConfig(
-            task="conversational",
+            task="conversation",
             criterias=["reward_model"],
-            rewarding_frequency=0,  # TODO: Implement rewarding for conversational task using reward model `Skywork/Skywork-Reward-Llama-3.1-8B-v0.2`
+            rewarding_frequency=1,
+            weight=0.0,
         ),
     ]
 
@@ -87,10 +90,14 @@ class Constants(BaseModel):
         super().__init__(**data)
         network = os.getenv("NETWORK")
         if network == "test":
-            self.RPE_PERCENTAGE_FOR_SYNTHETIC = 0.6
-            self.EPOCH_LENGTH = 60
-            self.MIN_STAKE = 0
-            self.ORGANIC_CLIENT_URL = "https://testnet-ncs-client.condenses.ai"
+            self.RPE_PERCENTAGE_FOR_SYNTHETIC = os.getenv(
+                "RPE_PERCENTAGE_FOR_SYNTHETIC", 0.5
+            )
+            self.EPOCH_LENGTH = os.getenv("EPOCH_LENGTH", 600)
+            self.MIN_STAKE = os.getenv("MIN_STAKE", 1)
+            self.ORGANIC_CLIENT_URL = os.getenv(
+                "ORGANIC_CLIENT_URL", "https://testnet-ncs-client.condenses.ai"
+            )
 
 
 constants = Constants()

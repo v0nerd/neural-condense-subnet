@@ -32,6 +32,13 @@ def add_validator_config(parser: ArgumentParser):
         default=8089,
         help="The port of the score backend server.",
     )
+
+    parser.add_argument(
+        "--validator.organic_client_url",
+        type=str,
+        default=constants.ORGANIC_CLIENT_URL,
+        help="The URL of the organic client.",
+    )
     return parser
 
 
@@ -52,5 +59,11 @@ def add_miner_config(parser: ArgumentParser):
     parser.add_argument(
         "--miner.tier",
         choices=tier_names,
+    )
+    parser.add_argument(
+        "--miner.whitelist_uids",
+        type=str,
+        default=None,
+        help="The uids to whitelist. For testing purposes.",
     )
     return parser
