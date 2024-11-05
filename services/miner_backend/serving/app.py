@@ -4,6 +4,7 @@ import transformers
 import torch
 from copy import deepcopy
 import rich
+import numpy as np
 
 
 class InferenceLogger(ls.Logger):
@@ -118,9 +119,11 @@ class Inference(ls.LitAPI):
 
         # Log the shape of the resulting compressed embeddings.
         self.log("Encode Response", f"Compressed to {compressed_embeddings.shape}")
-
+        compressed_embeddings = (
+            np.array(compressed_embeddings.cpu()).astype(np.float32).tolist()
+        )
         # Return the compressed token embeddings as a list.
-        return {"compressed_tokens": compressed_embeddings.tolist()}
+        return {"compressed_tokens": compressed_embeddings}
 
     def _load_model_artifacts(self, model):
         """
