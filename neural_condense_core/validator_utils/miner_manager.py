@@ -98,6 +98,7 @@ class MinerManager:
         r"""
         Synchronizes the metadata and serving counter of miners.
         """
+        self.save_state()
         self.metadata = self._update_metadata()
         self.serving_counter: dict[int, ServingCounter] = self._create_serving_counter()
 
