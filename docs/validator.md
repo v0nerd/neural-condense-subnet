@@ -55,6 +55,6 @@ pm2 start python --name condense_validator \
 --wallet.hotkey $my_hotkey \
 --axon.port $axon_port \
 --validator.gate_port $gate_port \
---validator.backend.host $condense_backend_host \
---miner.backend.host $condense_backend_port
+--validator.scoring_backend.host $condense_backend_host \
+--validator.scoring_backend.host $condense_backend_port
 ```

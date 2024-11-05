@@ -3,12 +3,13 @@ import bittensor as bt
 import threading
 import random
 from transformers import AutoTokenizer
-from transformers.utils.logging import disable_default_handler
-import requests
+from transformers.utils.logging import disable_propagation, disable_default_handler
 import numpy as np
 import time
+import requests
 
 disable_default_handler()
+disable_propagation()
 
 
 class Validator(ncc.BaseValidator):
@@ -101,86 +102,95 @@ class Validator(ncc.BaseValidator):
         4. Query the miners.
         5. Update the scores of the miners with probability rewarding_frequency.
         """
-        dendrite = bt.dendrite(self.wallet)
-        task_config = random.choice(ncc.constants.SYNTHETIC_TASK_CONFIG)
-        task_name = task_config.task
-        this_tier_config = ncc.constants.TIER_CONFIG[tier]
-        rewarding_frequency = task_config.rewarding_frequency
-        groud_truth_synapse = self.challenger(
-            tokenizer=tokenizer,
-            task=task_name,
-            max_context_length_in_chars=this_tier_config.max_context_length_in_chars,
-        )
-        groud_truth_synapse.target_model = model_name
-        synapse = groud_truth_synapse.model_copy()
-        synapse.hide_ground_truth()
-        axons = [self.metagraph.axons[int(uid)] for uid in batched_uids]
-        bt.logging.info(f"Querying {tier} with uids: {batched_uids}")
-        responses: list[ncc.TextCompressProtocol] = dendrite.query(
-            axons=axons,
-            synapse=synapse,
-            deserialize=False,
-            timeout=this_tier_config.timeout,
-        )
-        valid_responses: list[ncc.TextCompressProtocol] = []
-        valid_uids: list[int] = []
-        for uid, response in zip(batched_uids, responses):
-            if (
-                not response
-                or not response.is_success
-                or (
-                    len(response.compressed_tokens)
-                    >= this_tier_config.max_condensed_tokens
+        try:
+            dendrite = bt.dendrite(self.wallet)
+            task_weights = [
+                task_config.weight
+                for task_config in ncc.constants.SYNTHETIC_TASK_CONFIG
+            ]
+            task_config = random.choices(
+                ncc.constants.SYNTHETIC_TASK_CONFIG, weights=task_weights
+            )[0]
+            task_name = task_config.task
+            this_tier_config = ncc.constants.TIER_CONFIG[tier]
+            rewarding_frequency = task_config.rewarding_frequency
+            groud_truth_synapse = self.challenger(
+                tokenizer=tokenizer,
+                task=task_name,
+                max_context_length_in_chars=this_tier_config.max_context_length_in_chars,
+            )
+            groud_truth_synapse.target_model = model_name
+            synapse = groud_truth_synapse.model_copy()
+            synapse.hide_ground_truth()
+            axons = [self.metagraph.axons[int(uid)] for uid in batched_uids]
+            bt.logging.info(f"Querying {tier} with uids: {batched_uids}")
+            responses: list[ncc.TextCompressProtocol] = dendrite.query(
+                axons=axons,
+                synapse=synapse,
+                deserialize=False,
+                timeout=this_tier_config.timeout,
+            )
+            valid_responses: list[ncc.TextCompressProtocol] = []
+            valid_uids: list[int] = []
+            for uid, response in zip(batched_uids, responses):
+                if (
+                    not response
+                    or not response.is_success
+                    or (
+                        len(response.compressed_tokens)
+                        >= this_tier_config.max_condensed_tokens
+                    )
+                ):
+                    bt.logging.info(f"Invalid response from uid {uid}")
+                    self.miner_manager.update_scores([uid], [0])
+                else:
+                    valid_responses.append(response)
+                    valid_uids.append(uid)
+            if not valid_responses:
+                bt.logging.info("No valid responses.")
+            if valid_responses and random.random() < rewarding_frequency:
+                bt.logging.info(
+                    f"Updating scores of {len(valid_responses)} valid responses."
                 )
-            ):
-                bt.logging.info(f"Invalid response from uid {uid}")
-                self.miner_manager.update_scores([uid], [0])
-            else:
-                valid_responses.append(response)
-                valid_uids.append(uid)
-        if not valid_responses:
-            bt.logging.info("No valid responses.")
-        if valid_responses and random.random() < rewarding_frequency:
-            bt.logging.info(
-                f"Updating scores of {len(valid_responses)} valid responses."
-            )
-            payload = {
-                "miner_responses": [
-                    {
-                        "compressed_tokens": response.compressed_tokens,
-                    }
-                    for response in valid_responses
-                ],
-                "ground_truth_request": groud_truth_synapse.deserialize(),
-            }
-            payload["ground_truth_request"]["model_name"] = model_name
-            payload["ground_truth_request"]["criterias"] = task_config.criterias
-
-            scoring_response = requests.post(
-                f"http://{self.config.validator.score_backend.host}:{self.config.validator.score_backend.port}/scoring",
-                json=payload,
-                timeout=120,
-            )
-            scoring_response = scoring_response.json()
-
-            scores: list[float] = scoring_response["scores"]
-
-            factors_list = [
-                {
-                    "normalized_score_in_batch": score,
-                    "process_time/timeout": response.dendrite.process_time
-                    / this_tier_config.timeout,
+                payload = {
+                    "miner_responses": [
+                        {
+                            "compressed_tokens": response.compressed_tokens,
+                        }
+                        for response in valid_responses
+                    ],
+                    "ground_truth_request": groud_truth_synapse.deserialize(),
                 }
-                for score, response in zip(scores, valid_responses)
-            ]
-            penalized_scores = [
-                this_tier_config.scoring_lambda(factors) for factors in factors_list
-            ]
-            bt.logging.info(
-                f"Scores: {scores}\nFactors: {factors_list}\nPenalized scores: {penalized_scores}"
-            )
+                payload["ground_truth_request"]["model_name"] = model_name
+                payload["ground_truth_request"]["criterias"] = task_config.criterias
 
-            self.miner_manager.update_scores(penalized_scores, valid_uids)
+                scoring_response = requests.post(
+                    f"http://{self.config.validator.score_backend.host}:{self.config.validator.score_backend.port}/scoring",
+                    json=payload,
+                    timeout=120,
+                )
+                scoring_response = scoring_response.json()
+
+                scores: list[float] = scoring_response["scores"]
+
+                factors_list = [
+                    {
+                        "normalized_score_in_batch": score,
+                        "process_time/timeout": response.dendrite.process_time
+                        / this_tier_config.timeout,
+                    }
+                    for score, response in zip(scores, valid_responses)
+                ]
+                penalized_scores = [
+                    this_tier_config.scoring_lambda(factors) for factors in factors_list
+                ]
+                bt.logging.info(
+                    f"Scores: {scores}\nFactors: {factors_list}\nPenalized scores: {penalized_scores}"
+                )
+
+                self.miner_manager.update_scores(penalized_scores, valid_uids)
+        except Exception as e:
+            bt.logging.error(f"Error: {e}")
 
     def set_weights(self):
         r"""

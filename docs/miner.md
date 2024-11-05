@@ -44,7 +44,7 @@ pip install -e .
 3. Run the miner backend. Example of using ICAE as a backend:
 ```bash
 pm2 start --name condense_backend \
-"python services/miner_backend/serving/icae_app.py --port 8080 --devices 1 --workers_per_device 1"
+"python services/miner_backend/serving/icae_app.py --port 8080 --devices 0 --workers_per_device 1"
 ```
 
 4. Config your wallet, backend host, and port. Below just an example:
@@ -54,6 +54,7 @@ my_wallet="my_wallet"
 my_hotkey="my_hotkey"
 condense_backend_host="localhost"
 condense_backend_port=8080
+axon_port=12345
 ```
 
 4. Run the mining script
@@ -67,4 +68,5 @@ pm2 start python --name condense_miner \
 --miner.tier $my_tier \
 --miner.backend_host $condense_backend_host \
 --miner.backend_port $condense_backend_port
+--axon.port $axon_port
 ```

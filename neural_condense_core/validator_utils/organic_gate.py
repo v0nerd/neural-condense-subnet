@@ -93,7 +93,7 @@ class OrganicGate:
                     if counter.increment():
                         targeted_uid = uid
                         break
-            if not targeted_uid:
+            if targeted_uid is None:
                 raise HTTPException(
                     status_code=503,
                     detail="No miners available.",
