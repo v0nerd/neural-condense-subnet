@@ -52,4 +52,5 @@ class TextCompressProtocol(Synapse):
             "compressed_tokens": self.compressed_tokens,
             "expected_completion": self.expected_completion,
             "activation_prompt": self.activation_prompt,
+            "last_prompt": self.last_prompt,
         }
