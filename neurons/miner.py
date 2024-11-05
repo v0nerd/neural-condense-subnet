@@ -67,11 +67,10 @@ class Miner(ncc.BaseMiner):
 
         payload = synapse.get_miner_payload()
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=synapse.timeout) as client:
             response = await client.post(
                 f"http://{self.config.miner.backend_host}:{self.config.miner.backend_port}/condense",
                 json=payload,
-                timeout=synapse.timeout,
             )
             response = response.json()
             compressed_tokens = response["compressed_tokens"]
