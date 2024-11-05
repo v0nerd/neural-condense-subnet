@@ -1,5 +1,6 @@
 from bittensor import Synapse
 from typing import List
+from .common import base64
 
 
 class Metadata(Synapse):
@@ -20,6 +21,7 @@ class TextCompressProtocol(Synapse):
     """
 
     context: str = ""
+    compressed_tokens_b64: str = ""
     compressed_tokens: List[List[float]] = []
     expected_completion: str = ""
     activation_prompt: str = ""
@@ -49,8 +51,14 @@ class TextCompressProtocol(Synapse):
     def deserialize(self) -> Synapse:
         return {
             "context": self.context,
-            "compressed_tokens": self.compressed_tokens,
+            "compressed_tokens_b64": self.compressed_tokens_b64,
             "expected_completion": self.expected_completion,
             "activation_prompt": self.activation_prompt,
             "last_prompt": self.last_prompt,
         }
+
+    def base64_to_ndarray(self):
+        r"""
+        Convert the base64 string to np.ndarray.
+        """
+        self.compressed_tokens = base64.base64_to_ndarray(self.compressed_tokens_b64)

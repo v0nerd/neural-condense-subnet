@@ -6,6 +6,18 @@ from ICAE import ICAE, ModelArguments, AdditionalArguments
 from safetensors.torch import load_file
 import rich
 import litserve as ls
+import numpy as np
+import base64
+import io
+
+
+def ndarray_to_base64(array: np.ndarray) -> str:
+    """Convert a NumPy array to a base64-encoded string."""
+    buffer = io.BytesIO()
+    np.save(buffer, array)
+    buffer.seek(0)
+    base64_str = base64.b64encode(buffer.read()).decode("utf-8")
+    return base64_str
 
 
 class InferenceLogger(ls.Logger):
@@ -74,9 +86,10 @@ class Inference(ls.LitAPI):
             "Predict",
             f"Compress token length {len(memory_slots)} shape{memory_slots.shape}",
         )
-
+        memory_slots = memory_slots.cpu().numpy()
+        memory_slots = ndarray_to_base64(memory_slots)
         return {
-            "compressed_tokens": memory_slots.tolist(),
+            "compressed_tokens_b64": memory_slots,
             "target_model": target_model,
         }
 

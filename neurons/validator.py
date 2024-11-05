@@ -130,22 +130,28 @@ class Validator(ncc.BaseValidator):
                 deserialize=False,
                 timeout=this_tier_config.timeout,
             )
+            responses = [response.base64_to_ndarray() for response in responses]
             valid_responses: list[ncc.TextCompressProtocol] = []
             valid_uids: list[int] = []
             for uid, response in zip(batched_uids, responses):
-                if (
-                    not response
-                    or not response.is_success
-                    or (
-                        len(response.compressed_tokens)
-                        >= this_tier_config.max_condensed_tokens
-                    )
-                ):
-                    bt.logging.info(f"Invalid response from uid {uid}")
+                try:
+                    if (
+                        not response
+                        or not response.is_success
+                        or not response.compressed_tokens
+                        or (
+                            len(response.compressed_tokens)
+                            >= this_tier_config.max_condensed_tokens
+                        )
+                    ):
+                        bt.logging.info(f"Invalid response from uid {uid}")
+                        self.miner_manager.update_scores([uid], [0])
+                    else:
+                        valid_responses.append(response)
+                        valid_uids.append(uid)
+                except Exception as e:
+                    bt.logging.error(f"Pre-reward Error: {e}")
                     self.miner_manager.update_scores([uid], [0])
-                else:
-                    valid_responses.append(response)
-                    valid_uids.append(uid)
             if not valid_responses:
                 bt.logging.info("No valid responses.")
             if valid_responses and random.random() < rewarding_frequency:
@@ -155,7 +161,7 @@ class Validator(ncc.BaseValidator):
                 payload = {
                     "miner_responses": [
                         {
-                            "compressed_tokens": response.compressed_tokens,
+                            "compressed_tokens_b64": response.compressed_tokens_b64,
                         }
                         for response in valid_responses
                     ],

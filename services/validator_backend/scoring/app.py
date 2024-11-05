@@ -14,14 +14,29 @@ from .utils import loss_to_scores
 import threading
 import traceback
 import logging
+import io
+import base64
 
 logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger("Validator-Backend")
 
 
+def base64_to_ndarray(base64_str: str) -> np.ndarray:
+    try:
+        """Convert a base64-encoded string back to a NumPy array."""
+        buffer = io.BytesIO(base64.b64decode(base64_str))
+        buffer.seek(0)
+        array = np.load(buffer)
+    except Exception as e:
+        print(e)
+        return None
+    return array
+
+
 class ScoringRequest(BaseModel):
-    compressed_tokens: List[List[float]]
+    compressed_tokens_b64: str
+    compressed_tokens: np.ndarray = None
 
 
 class GroundTruthRequest(BaseModel):
@@ -88,6 +103,13 @@ class ScoringService:
             model = self.models[model_name]
             tokenizer = self.tokenizers[model_name]
             outputs = []
+
+            request.miner_responses = [
+                ScoringRequest(
+                    compressed_tokens=base64_to_ndarray(response.compressed_tokens_b64)
+                )
+                for response in request.miner_responses
+            ]
 
             if "loss" in request.ground_truth_request.criterias:
                 scores = self.calculate_loss_criteria(request, model, tokenizer)

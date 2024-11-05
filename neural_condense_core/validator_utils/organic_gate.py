@@ -22,7 +22,7 @@ class OrganicPayload(pydantic.BaseModel):
 
 
 class OrganicResponse(pydantic.BaseModel):
-    compressed_tokens: list[list[float]]
+    compressed_tokens_b64: str
 
 
 class RegisterPayload(pydantic.BaseModel):
@@ -100,21 +100,19 @@ class OrganicGate:
                 )
             target_axon = self.metagraph.axons[targeted_uid]
 
-            responses: list[TextCompressProtocol] = await self.dendrite.forward(
-                axons=[target_axon],
+            response: TextCompressProtocol = await self.dendrite.forward(
+                axons=target_axon,
                 synapse=synapse,
                 timeout=constants.TIER_CONFIG[request.tier].timeout,
                 deserialize=False,
             )
-            response: TextCompressProtocol = responses[0]
-            compressed_tokens = np.array(response.compressed_tokens, dtype=np.float32)
-            bt.logging.info(f"Compressed shape: {compressed_tokens.shape}")
-            compressed_tokens = compressed_tokens.tolist()
+            response.base64_to_ndarray()
+            bt.logging.info(f"Compressed shape: {response.compressed_tokens.shape}")
         except Exception as e:
             bt.logging.error(f"Error: {e}")
             raise HTTPException(status_code=503, detail="Validator error.")
 
-        return OrganicResponse(compressed_tokens=compressed_tokens)
+        return OrganicResponse(compressed_tokens_b64=response.compressed_tokens_b64)
 
     def start_server(self):
         self.executor = ThreadPoolExecutor(max_workers=1)
