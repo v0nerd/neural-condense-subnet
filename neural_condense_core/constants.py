@@ -17,6 +17,7 @@ class SyntheticTaskConfig(BaseModel):
     task: str
     criterias: List[str]
     rewarding_frequency: int
+    weight: float
 
 
 class Constants(BaseModel):
@@ -94,7 +95,7 @@ class Constants(BaseModel):
                 os.getenv("RPE_PERCENTAGE_FOR_SYNTHETIC", 0.5)
             )
             self.EPOCH_LENGTH = int(os.getenv("EPOCH_LENGTH", 600))
-            self.MIN_STAKE = int(os.getenv("MIN_STAKE", 1))
+            self.MIN_STAKE = int(os.getenv("MIN_STAKE", 0))
             self.ORGANIC_CLIENT_URL = os.getenv(
                 "ORGANIC_CLIENT_URL", "https://testnet-ncs-client.condenses.ai"
             )
