@@ -27,12 +27,13 @@
 
 | **Tier**       | **Purpose**                           | **Context Size**         | **Incentive Percentage**     | **Supporting Models**               |
 |----------------|---------------------------------------|---------------------------|---------------|--------------------------------------|
-| `research`     | Warmup tier for new LLM model releases | -                  | `20%`  | `mistralai/Mistral-7B-Instruct-v0.2` |
-| `inference_0`  | Optimized for **long context** in popular LLMs | Up to 3000 characters       | `40%`         | `mistralai/Mistral-7B-Instruct-v0.2` |
-| `inference_1`  | Optimized for **very long context** in popular LLMs | Up to 7000 characters       | `40%`         | `mistralai/Mistral-7B-Instruct-v0.2` |
+| `research`     | Warmup tier for new LLM model releases | Up to 2500                  | `100%`  | `mistralai/Mistral-7B-Instruct-v0.2` |
+| `inference_0`  | Optimized for **long context** in popular LLMs | Up to 3000 characters       | `0%`         | `mistralai/Mistral-7B-Instruct-v0.2` |
+| `inference_1`  | Optimized for **very long context** in popular LLMs | Up to 7000 characters       | `0%`         | `mistralai/Mistral-7B-Instruct-v0.2` |
 
 *Supporting models can be flexibly added based on tailored need.*
 
+On the early launch of the subnet, we distribute all the incentives to the research tier to encourage miners to join the network and be familiar with the subnet. The subnet owner will gradually distribute the incentives to the inference tiers as the subnet grows.
 
 --- 
 
