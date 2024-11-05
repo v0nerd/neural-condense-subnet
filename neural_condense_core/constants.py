@@ -90,11 +90,11 @@ class Constants(BaseModel):
         super().__init__(**data)
         network = os.getenv("NETWORK")
         if network == "test":
-            self.RPE_PERCENTAGE_FOR_SYNTHETIC = os.getenv(
-                "RPE_PERCENTAGE_FOR_SYNTHETIC", 0.5
+            self.RPE_PERCENTAGE_FOR_SYNTHETIC = float(
+                os.getenv("RPE_PERCENTAGE_FOR_SYNTHETIC", 0.5)
             )
-            self.EPOCH_LENGTH = os.getenv("EPOCH_LENGTH", 600)
-            self.MIN_STAKE = os.getenv("MIN_STAKE", 1)
+            self.EPOCH_LENGTH = int(os.getenv("EPOCH_LENGTH", 600))
+            self.MIN_STAKE = int(os.getenv("MIN_STAKE", 1))
             self.ORGANIC_CLIENT_URL = os.getenv(
                 "ORGANIC_CLIENT_URL", "https://testnet-ncs-client.condenses.ai"
             )
