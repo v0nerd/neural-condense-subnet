@@ -66,7 +66,6 @@ class Validator(ncc.BaseValidator):
 
         query_threads = []
         for _ in range(n_batch):
-            random.shuffle(serving_counter)
             batched_uids = []
             for uid in serving_counter:
                 if serving_counter[uid].increment():
@@ -85,6 +84,8 @@ class Validator(ncc.BaseValidator):
             bt.logging.info(f"Forwarding batch to {tier}: {batched_uids}")
             bt.logging.info(f"Sleeping for {sleep_per_batch} seconds.")
             time.sleep(sleep_per_batch)
+        for thread in query_threads:
+            thread.join()
 
     def _forward_batch(self, tier, model_name, batched_uids, tokenizer):
         r"""
@@ -100,6 +101,7 @@ class Validator(ncc.BaseValidator):
         4. Query the miners.
         5. Update the scores of the miners with probability rewarding_frequency.
         """
+        dendrite = bt.dendrite(self.wallet)
         task_config = random.choice(ncc.constants.SYNTHETIC_TASK_CONFIG)
         task_name = task_config.task
         this_tier_config = ncc.constants.TIER_CONFIG[tier]
@@ -112,7 +114,6 @@ class Validator(ncc.BaseValidator):
         groud_truth_synapse.target_model = model_name
         synapse = groud_truth_synapse.model_copy()
         synapse.hide_ground_truth()
-        dendrite = bt.dendrite(self.wallet)
         axons = [self.metagraph.axons[int(uid)] for uid in batched_uids]
         bt.logging.info(f"Querying {tier} with uids: {batched_uids}")
         responses: list[ncc.TextCompressProtocol] = dendrite.query(
