@@ -179,7 +179,7 @@ class Validator(ncc.BaseValidator):
                 f"Scores: {scores}\nFactors: {factors_list}\nPenalized scores: {penalized_scores}"
             )
 
-            self.miner_manager.update_scores(valid_uids, penalized_scores)
+            self.miner_manager.update_scores(penalized_scores, valid_uids)
 
     def set_weights(self):
         r"""
