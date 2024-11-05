@@ -36,15 +36,15 @@ class MinerManager:
 
     def __init__(self, validator):
         self.validator = validator
-        self.dendrite: bt.dendrite = validator.dendrite
+        self.dendrite = bt.dendrite(wallet=validator.wallet)
         self.metagraph = validator.metagraph
         self.default_metadata_items = [
             ("tier", "unknown"),
         ]
         self.metadata = self._init_metadata()
         bt.logging.info(f"Metadata: {self.metadata}")
-        self.load_state()
         self.state_path = self.validator.config.full_path + "/state.json"
+        self.load_state()
         self.sync()
 
     def update_scores(self, scores: list[float], uids: list[int]):
@@ -66,10 +66,9 @@ class MinerManager:
 
     def load_state(self):
         try:
-            if os.path.exists(self.state_path):
-                state = json.load(open(self.config.full_path + "/state.json", "r"))
-                self.metadata = state["metadata"]
-                bt.logging.success("Loaded state.")
+            state = json.load(open(self.state_path, "r"))
+            self.metadata = state["metadata"]
+            bt.logging.success("Loaded state.")
         except Exception as e:
             bt.logging.error(f"Failed to load state: {e}")
 
