@@ -4,7 +4,7 @@ from ..constants import constants
 
 def build_rate_limit(metagraph, config, tier=None):
     S = metagraph.S
-    if config.miner.whitelist_uids:
+    if config.whitelist_uids:
         whitelist_uids = [int(uid) for uid in config.miner.whitelist_uids.split(",")]
     else:
         whitelist_uids = [i for i in range(len(S)) if S[i] > constants.MIN_STAKE]

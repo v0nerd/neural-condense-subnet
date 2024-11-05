@@ -5,6 +5,12 @@ from ..constants import constants
 
 def add_common_config(parser: ArgumentParser):
     parser.add_argument("--netuid", type=int, default=1, help="The chain subnet uid.")
+    parser.add_argument(
+        "--whitelist_uids",
+        type=str,
+        default=None,
+        help="The uids to whitelist. For testing purposes.",
+    )
     bt.subtensor.add_args(parser)
     bt.logging.add_args(parser)
     bt.wallet.add_args(parser)
@@ -59,11 +65,5 @@ def add_miner_config(parser: ArgumentParser):
     parser.add_argument(
         "--miner.tier",
         choices=tier_names,
-    )
-    parser.add_argument(
-        "--miner.whitelist_uids",
-        type=str,
-        default=None,
-        help="The uids to whitelist. For testing purposes.",
     )
     return parser
