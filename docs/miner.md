@@ -7,6 +7,7 @@
 ## Minimum Requirements for Baseline
 - GPU with at least 24GB of VRAM (RTX 4090, A6000, A100, H100, etc.) to run Baseline Model
 - CUDA, NVIDIA Driver installed
+- PM2 install (see [Guide to install PM2](./pm2.md))
 
 ## What does a Miner do?
 
@@ -69,4 +70,9 @@ pm2 start python --name condense_miner \
 --miner.backend_host $condense_backend_host \
 --miner.backend_port $condense_backend_port
 --axon.port $axon_port
+```
+
+- If you want to update the parameters, you can use the following command:
+```bash
+pm2 restart condense_miner --update-env
 ```
