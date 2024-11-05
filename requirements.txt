@@ -1,5 +1,4 @@
 transformers==4.45.2
-torch==2.5.0
 bittensor==8.2.0
 accelerate==1.0.1
 datasets==3.0.2
