@@ -33,7 +33,7 @@ class Constants(BaseModel):
         "inference_0": TierConfig(
             incentive_percentage=0.4,
             requests_per_epoch=1024,
-            timeout=4,
+            timeout=8,
             scoring_lambda=lambda x: max(
                 0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.1
             ),
@@ -44,7 +44,7 @@ class Constants(BaseModel):
         "inference_1": TierConfig(
             incentive_percentage=0.4,
             requests_per_epoch=1024,
-            timeout=4,
+            timeout=8,
             scoring_lambda=lambda x: max(
                 0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.1
             ),
