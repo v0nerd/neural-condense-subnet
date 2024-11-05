@@ -4,7 +4,12 @@ from typing import List
 import torch.nn.functional as F
 import torch
 import numpy as np
-from transformers import AutoTokenizer, AutoModelForCausalLM, MistralForCausalLM
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    AutoModelForSequenceClassification,
+)
+
 from .utils import loss_to_scores
 import threading
 import traceback
@@ -25,6 +30,7 @@ class GroundTruthRequest(BaseModel):
     activation_prompt: str
     model_name: str
     criterias: List[str]
+    last_prompt: str = ""
 
 
 class BatchedScoringRequest(BaseModel):
@@ -38,10 +44,19 @@ class ScoringService:
         Initializes the ScoringService with model and tokenizer storage, device configuration,
         and a lock for thread-safe operations. Runs a unit test to verify setup.
         """
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        reward_model_name = "Skywork/Skywork-Reward-Llama-3.1-8B-v0.2"
+        self.rm_model = AutoModelForSequenceClassification.from_pretrained(
+            reward_model_name,
+            torch_dtype=torch.bfloat16,
+            device_map=self.device,
+            attn_implementation="flash_attention_2",
+            num_labels=1,
+        )
+        self.rm_tokenizer = AutoTokenizer.from_pretrained(reward_model_name)
         self.models = {}
         self.tokenizers = {}
         self.lock = threading.Lock()
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.unit_test()
 
     def load_model(self, model_name: str):
@@ -76,10 +91,17 @@ class ScoringService:
 
             if "loss" in request.ground_truth_request.criterias:
                 scores = self.calculate_loss_criteria(request, model, tokenizer)
+                scores = self._smooth_scores(scores, delta_0=0.3, decay=0.5)
                 outputs.append(scores)
 
             if "accuracy" in request.ground_truth_request.criterias:
                 scores = self.calculate_accuracy_criteria(request, model, tokenizer)
+                scores = self._smooth_scores(scores, delta_0=0.3, decay=0.5)
+                outputs.append(scores)
+
+            if "reward_model" in request.ground_truth_request.criterias:
+                scores = self.calculate_llm_reward_criteria(request, model, tokenizer)
+                scores = self._smooth_scores(scores, delta_0=0.3, decay=0.5)
                 outputs.append(scores)
 
             scores = np.mean(outputs, axis=0)
@@ -159,6 +181,59 @@ class ScoringService:
         except Exception as e:
             print(f"Error in calculate_loss_criteria: {e}")
             return []
+
+    def calculate_llm_reward_criteria(
+        self, request: BatchedScoringRequest, model, tokenizer
+    ):
+        device = model.device
+        activation_prompt = request.ground_truth_request.activation_prompt
+        expected_completion = request.ground_truth_request.expected_completion
+        last_prompt = request.ground_truth_request.last_prompt
+        rewards = []
+
+        activation_prompt_tokens = tokenizer(
+            activation_prompt, return_tensors="pt", add_special_tokens=False
+        ).input_ids.to(device)
+        activation_prompt_embeddings = model.get_input_embeddings()(
+            activation_prompt_tokens
+        )
+
+        for miner_output in request.miner_responses:
+            try:
+                compressed_tokens = (
+                    torch.tensor(miner_output.compressed_tokens).unsqueeze(0).to(device)
+                )
+                inputs_embeds = torch.cat(
+                    [compressed_tokens, activation_prompt_embeddings], dim=1
+                ).to(device)
+
+                generated_outputs = model.generate(
+                    inputs_embeds=inputs_embeds,
+                    max_new_tokens=256,
+                    num_return_sequences=1,
+                )
+                completion = tokenizer.decode(
+                    generated_outputs[0], skip_special_tokens=True
+                ).strip()
+                conversation_to_score = [
+                    {
+                        "role": "user",
+                        "content": last_prompt,
+                    },
+                    {
+                        "role": "assistant",
+                        "content": completion,
+                    },
+                ]
+                conversation_to_score = self.rm_tokenizer.apply_chat_template(
+                    conversation_to_score, tokenize=True, return_tensors="pt"
+                ).to(device)
+                score = self.rm_model(conversation_to_score).logits[0][0].item()
+                rewards.append(score)
+            except Exception as e:
+                print(f"Error in calculate_accuracy_criteria loop: {e}")
+                rewards.append(0)
+        return rewards
 
     def calculate_accuracy_criteria(
         self, request: BatchedScoringRequest, model, tokenizer
@@ -300,6 +375,37 @@ class ScoringService:
             traceback.print_exc()
             print(f"Error in _llm_judge: {e}")
             return True
+
+    def _smooth_scores(self, scores: list[float], delta_0=0.3, decay=0.5):
+        """
+        Smooths the scores based on a ranking system with an exponential decay.
+
+        Parameters:
+        - scores: An unsorted list of scores.
+        - delta_0: The initial decrement factor (default is 0.3).
+        - alpha: The exponential decay factor (default is 1.5).
+
+        Returns:
+        - A list of smoothed scores where:
+            - Rank 1 gets 1.0,
+            - Rank 2 gets 1 - delta_0,
+            - Rank 3 gets 1 - delta_0 - delta_0*alpha,
+            - Rank 4 gets 1 - delta_0 - delta_0*alpha - delta_0*alpha^2, etc.
+        """
+        indexed_scores = [(i, score) for i, score in enumerate(scores)]
+        sorted_scores = sorted(indexed_scores, key=lambda x: x[1], reverse=True)
+
+        smoothed_scores = [0.0] * len(scores)  # Initialize the output list
+        rank_value = 1.0  # Start with the highest rank
+        for i, (index, score) in enumerate(sorted_scores):
+            if i != 0 and abs(score - sorted_scores[i - 1][1]) < 1e-6:
+                smoothed_scores[index] = rank_value
+            else:
+                smoothed_scores[index] = rank_value
+                rank_value -= delta_0 * (decay**i)
+            prev_score = score
+
+        return smoothed_scores
 
 
 app = FastAPI()

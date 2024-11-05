@@ -149,7 +149,7 @@ class OrganicGate:
 
         """
 
-        url = f"{constants.ORGANIC_CLIENT_URL}/register"
+        url = f"{self.config.validator.organic_client_url}/register"
         signature = f"0x{self.dendrite.keypair.sign(self.message).hex()}"
 
         headers = {
