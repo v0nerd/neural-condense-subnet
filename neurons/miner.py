@@ -63,7 +63,10 @@ class Miner(ncc.BaseMiner):
         Returns:
             synapse (TextCompressProtocol): The synapse containing the compressed tokens.
         """
-        bt.logging.info(f"Forwarding text compress: {synapse.context[:100]}...")
+        bt.logging.info(
+            f"Forwarding text compress: {synapse.context[:100]}...{synapse.context[-100:]}"
+        )
+        bt.logging.info(f"Context length: {len(synapse.context)}")
 
         payload = synapse.get_miner_payload()
 
@@ -73,9 +76,12 @@ class Miner(ncc.BaseMiner):
                 json=payload,
             )
             response = response.json()
-            compressed_tokens = response["compressed_tokens"]
-            synapse.compressed_tokens = compressed_tokens
-        bt.logging.info(f"Compressed shape: {np.array(compressed_tokens).shape}")
+            compressed_tokens_b64 = response["compressed_tokens_b64"]
+            synapse.compressed_tokens_b64 = compressed_tokens_b64
+            compressed_tokens = ncc.common.base64.base64_to_ndarray(
+                compressed_tokens_b64
+            )
+        bt.logging.info(f"Compressed to shape: {np.array(compressed_tokens).shape}")
         return synapse
 
     def blacklist_fn(self, synapse: ncc.TextCompressProtocol) -> Tuple[bool, str]:

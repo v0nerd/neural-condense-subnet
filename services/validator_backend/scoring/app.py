@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import List
+from typing import List, Any
 import torch.nn.functional as F
 import torch
 import numpy as np
@@ -14,14 +14,43 @@ from .utils import loss_to_scores
 import threading
 import traceback
 import logging
+import io
+import base64
 
 logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger("Validator-Backend")
 
 
+def base64_to_ndarray(base64_str: str) -> np.ndarray:
+    try:
+        """Convert a base64-encoded string back to a NumPy array."""
+        buffer = io.BytesIO(base64.b64decode(base64_str))
+        buffer.seek(0)
+        array = np.load(buffer)
+        array = array.astype(np.float32)
+    except Exception as e:
+        print(e)
+        return None
+    return array
+
+
+def ndarray_to_base64(array: np.ndarray) -> str:
+    try:
+        """Convert a NumPy array to a base64-encoded string."""
+        buffer = io.BytesIO()
+        np.save(buffer, array)
+        buffer.seek(0)
+        base64_str = base64.b64encode(buffer.read()).decode("utf-8")
+    except Exception as e:
+        print(e)
+        return ""
+    return base64_str
+
+
 class ScoringRequest(BaseModel):
-    compressed_tokens: List[List[float]]
+    compressed_tokens_b64: str
+    compressed_tokens: Any = None
 
 
 class GroundTruthRequest(BaseModel):
@@ -88,6 +117,11 @@ class ScoringService:
             model = self.models[model_name]
             tokenizer = self.tokenizers[model_name]
             outputs = []
+
+            for miner_response in request.miner_responses:
+                miner_response.compressed_tokens = base64_to_ndarray(
+                    miner_response.compressed_tokens_b64
+                )
 
             if "loss" in request.ground_truth_request.criterias:
                 scores = self.calculate_loss_criteria(request, model, tokenizer)
@@ -271,16 +305,13 @@ class ScoringService:
                         max_new_tokens=64,
                         num_return_sequences=1,
                     )
-                    completion = (
-                        tokenizer.decode(generated_outputs[0], skip_special_tokens=True)
-                        .strip()
-                        .lower()
-                    )
-                    expected_completion_lower = expected_completion.strip().lower()
+                    completion = tokenizer.decode(
+                        generated_outputs[0], skip_special_tokens=True
+                    ).strip()
                     logger.info(f"Completion: {completion}")
-                    logger.info(f"Expected Completion: {expected_completion_lower}")
+                    logger.info(f"Expected Completion: {expected_completion}")
                     accuracy = self._llm_judge(
-                        expected_completion_lower, completion, model, tokenizer
+                        expected_completion, completion, model, tokenizer
                     )
                     accuracy_scores.append(accuracy)
                 except Exception as e:
@@ -318,8 +349,8 @@ class ScoringService:
                 self.models[model_name].get_input_embeddings()(context_ids).squeeze(0)
             )
             compressed_tokens = context_embeds.detach().cpu().numpy().tolist()
-
-            miner_response = ScoringRequest(compressed_tokens=compressed_tokens)
+            compressed_tokens_b64 = ndarray_to_base64(compressed_tokens)
+            miner_response = ScoringRequest(compressed_tokens_b64=compressed_tokens_b64)
             ground_truth_request = GroundTruthRequest(
                 context=data["context"],
                 activation_prompt=data["activation_prompt"],

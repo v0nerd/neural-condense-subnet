@@ -10,6 +10,7 @@ class TierConfig(BaseModel):
     scoring_lambda: Callable[[dict], float]
     supporting_models: List[str]
     max_condensed_tokens: int
+    min_condensed_tokens: int
     max_context_length_in_chars: int
 
 
@@ -17,6 +18,7 @@ class SyntheticTaskConfig(BaseModel):
     task: str
     criterias: List[str]
     rewarding_frequency: int
+    weight: float
 
 
 class Constants(BaseModel):
@@ -25,32 +27,43 @@ class Constants(BaseModel):
             incentive_percentage=1.0,
             requests_per_epoch=1024,
             timeout=64,
-            scoring_lambda=lambda x: x["normalized_score_in_batch"],
+            scoring_lambda=lambda x: x["normalized_score_in_batch"]
+            - 0.2 * x["process_time/timeout"]
+            + 0.2 * x["compress_rate_reward"],
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
-            max_condensed_tokens=256,
-            max_context_length_in_chars=2500,
+            max_condensed_tokens=1024,
+            min_condensed_tokens=128,
+            max_context_length_in_chars=10000,
         ),
         "inference_0": TierConfig(
             incentive_percentage=0.0,
             requests_per_epoch=1024,
             timeout=8,
             scoring_lambda=lambda x: max(
-                0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.2
+                0,
+                x["normalized_score_in_batch"]
+                - 0.2 * x["process_time/timeout"]
+                + 0.2 * x["compress_rate_reward"],
             ),
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
-            max_condensed_tokens=256,
-            max_context_length_in_chars=4000,
+            max_condensed_tokens=1024,
+            min_condensed_tokens=128,
+            max_context_length_in_chars=10000,
         ),
         "inference_1": TierConfig(
             incentive_percentage=0.0,
             requests_per_epoch=1024,
             timeout=8,
             scoring_lambda=lambda x: max(
-                0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.2
+                0,
+                x["normalized_score_in_batch"]
+                - 0.2 * x["process_time/timeout"]
+                + 0.2 * x["compress_rate_reward"],
             ),
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
-            max_condensed_tokens=768,
-            max_context_length_in_chars=8000,
+            max_condensed_tokens=2048,
+            min_condensed_tokens=128,
+            max_context_length_in_chars=15000,
         ),
     }
 
@@ -94,7 +107,7 @@ class Constants(BaseModel):
                 os.getenv("RPE_PERCENTAGE_FOR_SYNTHETIC", 0.5)
             )
             self.EPOCH_LENGTH = int(os.getenv("EPOCH_LENGTH", 600))
-            self.MIN_STAKE = int(os.getenv("MIN_STAKE", 1))
+            self.MIN_STAKE = int(os.getenv("MIN_STAKE", 0))
             self.ORGANIC_CLIENT_URL = os.getenv(
                 "ORGANIC_CLIENT_URL", "https://testnet-ncs-client.condenses.ai"
             )

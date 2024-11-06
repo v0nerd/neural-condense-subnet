@@ -42,34 +42,53 @@ pip install -e .
 . services/miner_backend/serving/download_checkpoint.sh
 ```
 
-3. Run the miner backend. Example of using ICAE as a backend:
+3. Config your wallet, backend, etc... Below just an example:
+
+**Parameters**
+- `--miner.tier` - The selected tier should be suitable with your backend.
+- `--netuid` - The network UID of the subnet.
+- `--subtensor.network` - The Subtensor network to connect to. `finney` for the mainnet. `test` for the testnet.
+- `--wallet.name` - The name of the wallet to use.
+- `--wallet.hotkey` - The hotkey of the wallet to use.
+- `--axon.port` - The port to be posted to metagraph.
+- `--miner.backend.host` - The host of the miner backend for condensing.
+- `--miner.backend.port` - The port of the miner backend for condensing.
+
+**Important**: `axon_port` must be opened in your firewall.
+
+**Define bash variable**
 ```bash
-pm2 start --name condense_backend \
-"python services/miner_backend/serving/icae_app.py --port 8080 --devices 0 --workers_per_device 1"
+miner_tier="inference_0"
+miner_wallet="my_wallet"
+miner_hotkey="my_hotkey"
+miner_backend_host="localhost"
+miner_backend_port=8080
+miner_axon_port=12345
+miner_netuid=52
+miner_subtensor_network="finney"
 ```
 
-4. Config your wallet, backend host, and port. Below just an example:
+4. Run the miner backend. Example of using our baseline ICAE as a backend (https://github.com/getao/icae):
 ```bash
-my_tier="inference_0"
-my_wallet="my_wallet"
-my_hotkey="my_hotkey"
-condense_backend_host="localhost"
-condense_backend_port=8080
-axon_port=12345
+pm2 start python --name condense_miner_backend \
+-- -m services.miner_backend.serving.icae_app \
+--port $miner_backend_port \
+--devices 0 \
+--workers_per_device 1
 ```
 
-4. Run the mining script
+5. Run the mining script
 ```bash
 pm2 start python --name condense_miner \
 -- -m neurons.miner \
---netuid 52 \
---subtensor.network finney \
---wallet.name $my_wallet \
---wallet.hotkey $my_hotkey \
---miner.tier $my_tier \
---miner.backend_host $condense_backend_host \
---miner.backend_port $condense_backend_port
---axon.port $axon_port
+--netuid $miner_netuid \
+--subtensor.network $miner_subtensor_network \
+--wallet.name $miner_wallet \
+--wallet.hotkey $miner_hotkey \
+--miner.tier $miner_tier \
+--miner.backend_host $miner_backend_host \
+--miner.backend_port $miner_backend_port \
+--axon.port $miner_axon_port
 ```
 
 - If you want to update the parameters, you can use the following command:

@@ -133,19 +133,29 @@ class Validator(ncc.BaseValidator):
             valid_responses: list[ncc.TextCompressProtocol] = []
             valid_uids: list[int] = []
             for uid, response in zip(batched_uids, responses):
-                if (
-                    not response
-                    or not response.is_success
-                    or (
-                        len(response.compressed_tokens)
-                        >= this_tier_config.max_condensed_tokens
-                    )
-                ):
-                    bt.logging.info(f"Invalid response from uid {uid}")
+                try:
+                    response.base64_to_ndarray()
+                    if (
+                        not response
+                        or not response.is_success
+                        or not len(response.compressed_tokens.shape) == 2
+                        or not (
+                            len(response.compressed_tokens)
+                            <= this_tier_config.max_condensed_tokens
+                            and len(response.compressed_tokens)
+                            >= this_tier_config.min_condensed_tokens
+                        )
+                    ):
+                        bt.logging.info(
+                            f"Invalid response from uid {uid}, {response.is_success}"
+                        )
+                        self.miner_manager.update_scores([uid], [0])
+                    else:
+                        valid_responses.append(response)
+                        valid_uids.append(uid)
+                except Exception as e:
+                    bt.logging.error(f"Pre-reward Error: {e}")
                     self.miner_manager.update_scores([uid], [0])
-                else:
-                    valid_responses.append(response)
-                    valid_uids.append(uid)
             if not valid_responses:
                 bt.logging.info("No valid responses.")
             if valid_responses and random.random() < rewarding_frequency:
@@ -155,7 +165,7 @@ class Validator(ncc.BaseValidator):
                 payload = {
                     "miner_responses": [
                         {
-                            "compressed_tokens": response.compressed_tokens,
+                            "compressed_tokens_b64": response.compressed_tokens_b64,
                         }
                         for response in valid_responses
                     ],
@@ -173,13 +183,27 @@ class Validator(ncc.BaseValidator):
 
                 scores: list[float] = scoring_response["scores"]
 
+                n_condense_tokens = [
+                    len(response.compressed_tokens) for response in valid_responses
+                ]
+                compress_rates = [
+                    n / this_tier_config.max_condensed_tokens for n in n_condense_tokens
+                ]
+
+                compress_rate_rewards = [
+                    1 - compress_rate for compress_rate in compress_rates
+                ]
+
                 factors_list = [
                     {
                         "normalized_score_in_batch": score,
                         "process_time/timeout": response.dendrite.process_time
                         / this_tier_config.timeout,
+                        "compress_rate_reward": compress_rate_reward,
                     }
-                    for score, response in zip(scores, valid_responses)
+                    for score, compress_rate_reward, response in zip(
+                        scores, compress_rate_rewards, valid_responses
+                    )
                 ]
                 penalized_scores = [
                     this_tier_config.scoring_lambda(factors) for factors in factors_list
