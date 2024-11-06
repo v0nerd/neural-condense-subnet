@@ -117,9 +117,9 @@ class ScoringService:
             tokenizer = self.tokenizers[model_name]
             outputs = []
 
-            for request in request.miner_responses:
-                request.compressed_tokens = base64_to_ndarray(
-                    request.compressed_tokens_b64
+            for miner_response in request.miner_responses:
+                miner_response.compressed_tokens = base64_to_ndarray(
+                    miner_response.compressed_tokens_b64
                 )
 
             if "loss" in request.ground_truth_request.criterias:
