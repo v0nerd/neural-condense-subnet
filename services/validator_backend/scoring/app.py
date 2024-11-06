@@ -34,6 +34,19 @@ def base64_to_ndarray(base64_str: str) -> np.ndarray:
     return array
 
 
+def ndarray_to_base64(array: np.ndarray) -> str:
+    try:
+        """Convert a NumPy array to a base64-encoded string."""
+        buffer = io.BytesIO()
+        np.save(buffer, array)
+        buffer.seek(0)
+        base64_str = base64.b64encode(buffer.read()).decode("utf-8")
+    except Exception as e:
+        print(e)
+        return ""
+    return base64_str
+
+
 class ScoringRequest(BaseModel):
     compressed_tokens_b64: str
     compressed_tokens: Any = None
@@ -340,8 +353,8 @@ class ScoringService:
                 self.models[model_name].get_input_embeddings()(context_ids).squeeze(0)
             )
             compressed_tokens = context_embeds.detach().cpu().numpy().tolist()
-
-            miner_response = ScoringRequest(compressed_tokens=compressed_tokens)
+            compressed_tokens_b64 = ndarray_to_base64(compressed_tokens)
+            miner_response = ScoringRequest(compressed_tokens_b64=compressed_tokens_b64)
             ground_truth_request = GroundTruthRequest(
                 context=data["context"],
                 activation_prompt=data["activation_prompt"],
