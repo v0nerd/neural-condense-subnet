@@ -10,6 +10,7 @@ class TierConfig(BaseModel):
     scoring_lambda: Callable[[dict], float]
     supporting_models: List[str]
     max_condensed_tokens: int
+    min_condensed_tokens: int
     max_context_length_in_chars: int
 
 
@@ -27,10 +28,11 @@ class Constants(BaseModel):
             requests_per_epoch=1024,
             timeout=64,
             scoring_lambda=lambda x: x["normalized_score_in_batch"]
-            - x["process_time/timeout"] * 0.2
-            + 0.2 * x["normalized_compress_rate_reward"],
+            - 0.2 * x["process_time/timeout"]
+            + 0.2 * x["compress_rate_reward"],
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
             max_condensed_tokens=1024,
+            min_condensed_tokens=128,
             max_context_length_in_chars=10000,
         ),
         "inference_0": TierConfig(
@@ -40,11 +42,12 @@ class Constants(BaseModel):
             scoring_lambda=lambda x: max(
                 0,
                 x["normalized_score_in_batch"]
-                - x["process_time/timeout"] * 0.2
-                + 0.2 * x["normalized_compress_rate_reward"],
+                - 0.2 * x["process_time/timeout"]
+                + 0.2 * x["compress_rate_reward"],
             ),
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
             max_condensed_tokens=1024,
+            min_condensed_tokens=128,
             max_context_length_in_chars=10000,
         ),
         "inference_1": TierConfig(
@@ -54,12 +57,13 @@ class Constants(BaseModel):
             scoring_lambda=lambda x: max(
                 0,
                 x["normalized_score_in_batch"]
-                - x["process_time/timeout"] * 0.2
-                + 0.2 * x["normalized_compress_rate_reward"],
+                - 0.2 * x["process_time/timeout"]
+                + 0.2 * x["compress_rate_reward"],
             ),
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
             max_condensed_tokens=2048,
-            max_context_length_in_chars=20000,
+            min_condensed_tokens=128,
+            max_context_length_in_chars=15000,
         ),
     }
 

@@ -28,6 +28,7 @@ def base64_to_ndarray(base64_str: str) -> np.ndarray:
         buffer = io.BytesIO(base64.b64decode(base64_str))
         buffer.seek(0)
         array = np.load(buffer)
+        array = array.astype(np.float32)
     except Exception as e:
         print(e)
         return None
@@ -304,16 +305,13 @@ class ScoringService:
                         max_new_tokens=64,
                         num_return_sequences=1,
                     )
-                    completion = (
-                        tokenizer.decode(generated_outputs[0], skip_special_tokens=True)
-                        .strip()
-                        .lower()
-                    )
-                    expected_completion_lower = expected_completion.strip().lower()
+                    completion = tokenizer.decode(
+                        generated_outputs[0], skip_special_tokens=True
+                    ).strip()
                     logger.info(f"Completion: {completion}")
-                    logger.info(f"Expected Completion: {expected_completion_lower}")
+                    logger.info(f"Expected Completion: {expected_completion}")
                     accuracy = self._llm_judge(
-                        expected_completion_lower, completion, model, tokenizer
+                        expected_completion, completion, model, tokenizer
                     )
                     accuracy_scores.append(accuracy)
                 except Exception as e:
