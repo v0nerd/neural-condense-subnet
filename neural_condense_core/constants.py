@@ -26,32 +26,40 @@ class Constants(BaseModel):
             incentive_percentage=1.0,
             requests_per_epoch=1024,
             timeout=64,
-            scoring_lambda=lambda x: x["normalized_score_in_batch"],
+            scoring_lambda=lambda x: x["normalized_score_in_batch"]
+            - x["process_time/timeout"] * 0.2
+            + 0.2 * x["normalized_compress_rate_reward"],
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
-            max_condensed_tokens=256,
-            max_context_length_in_chars=2500,
+            max_condensed_tokens=1024,
+            max_context_length_in_chars=10000,
         ),
         "inference_0": TierConfig(
             incentive_percentage=0.0,
             requests_per_epoch=1024,
             timeout=8,
             scoring_lambda=lambda x: max(
-                0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.2
+                0,
+                x["normalized_score_in_batch"]
+                - x["process_time/timeout"] * 0.2
+                + 0.2 * x["normalized_compress_rate_reward"],
             ),
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
-            max_condensed_tokens=256,
-            max_context_length_in_chars=4000,
+            max_condensed_tokens=1024,
+            max_context_length_in_chars=10000,
         ),
         "inference_1": TierConfig(
             incentive_percentage=0.0,
             requests_per_epoch=1024,
             timeout=8,
             scoring_lambda=lambda x: max(
-                0, x["normalized_score_in_batch"] - x["process_time/timeout"] * 0.2
+                0,
+                x["normalized_score_in_batch"]
+                - x["process_time/timeout"] * 0.2
+                + 0.2 * x["normalized_compress_rate_reward"],
             ),
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
-            max_condensed_tokens=768,
-            max_context_length_in_chars=8000,
+            max_condensed_tokens=2048,
+            max_context_length_in_chars=20000,
         ),
     }
 

@@ -21,6 +21,7 @@ def base64_to_ndarray(base64_str: str) -> np.ndarray:
         buffer = io.BytesIO(base64.b64decode(base64_str))
         buffer.seek(0)
         array = np.load(buffer)
-    except Exception:
+    except Exception as e:
+        print(f"Base64 to ndarray error: {e}")
         array = np.array([])
     return array
