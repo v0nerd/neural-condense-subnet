@@ -82,7 +82,9 @@ class Miner(ncc.BaseMiner):
                 compressed_tokens_b64
             )
         bt.logging.info(f"Compressed to shape: {np.array(compressed_tokens).shape}")
-        return synapse
+        return ncc.TextCompressProtocol(
+            compressed_tokens_b64=str(compressed_tokens_b64)
+        )
 
     def blacklist_fn(self, synapse: ncc.TextCompressProtocol) -> Tuple[bool, str]:
         r"""

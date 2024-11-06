@@ -1,5 +1,5 @@
 from bittensor import Synapse
-from typing import List
+from typing import List, Any
 from .common import base64
 
 
@@ -22,7 +22,7 @@ class TextCompressProtocol(Synapse):
 
     context: str = ""
     compressed_tokens_b64: str = ""
-    compressed_tokens: List[List[float]] = []
+    compressed_tokens: Any = []
     expected_completion: str = ""
     activation_prompt: str = ""
     target_model: str = ""
