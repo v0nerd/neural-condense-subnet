@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import List
+from typing import List, Any
 import torch.nn.functional as F
 import torch
 import numpy as np
@@ -36,7 +36,7 @@ def base64_to_ndarray(base64_str: str) -> np.ndarray:
 
 class ScoringRequest(BaseModel):
     compressed_tokens_b64: str
-    compressed_tokens: np.ndarray = None
+    compressed_tokens: Any = None
 
 
 class GroundTruthRequest(BaseModel):

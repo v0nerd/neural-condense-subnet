@@ -1,42 +1,120 @@
-from transformers import AutoTokenizer
 import time
-from neural_condense_core import Challenger
-from tqdm import tqdm
 import json
+import numpy as np
+from tqdm import tqdm
+from transformers import AutoTokenizer
+from neural_condense_core import Challenger
 
-tokenizer = AutoTokenizer.from_pretrained("Condense-AI/Mistral-7B-Instruct-v0.2")
-challenger = Challenger()
 
-time_logs = {
-    "question_answering": 0,
-    "reconstruction": 0,
-    "conversation": 0,
-}
-n_loop = 1000
-pbar = tqdm(range(n_loop * 2))
-dataset_items = []
-for i in range(n_loop):
-    for task in ["question_answering", "reconstruction", "conversation"]:
-        item = {}
-        start = time.time()
-        protocol = challenger(tokenizer, task, 3000)
-        item["task"] = task
-        item["id"] = i
-        item["context"] = protocol.context
-        item["activation_prompt"] = protocol.activation_prompt
-        item["expected_completion"] = protocol.expected_completion
-        item["model_id"] = "mistralai/Mistral-7B-Instruct-v0.2"
-        item["max_characters"] = 3000
-        dataset_items.append(item)
-        print("START")
-        end = time.time()
-        time_logs[task] += end - start
-        pbar.update(1)
+def benchmark_challenger(
+    n_iterations: int = 5000,
+    max_characters: int = 10000,
+    model_name: str = "Condense-AI/Mistral-7B-Instruct-v0.2",
+):
+    """
+    Benchmark the Challenger model's response times and dataset creation for various tasks.
 
-time_logs = {k: v / n_loop for k, v in time_logs.items()}
-print(time_logs)
+    Args:
+        n_iterations (int): Number of iterations per task to perform. Defaults to 5000.
+        max_characters (int): Maximum character limit for context in each task. Defaults to 10000.
+        model_name (str): The name of the model to use for tokenization. Defaults to "Condense-AI/Mistral-7B-Instruct-v0.2".
 
-# >> {'qa': 4.466314172744751, 'ae': 4.178352427482605}
+    Returns:
+        dict: Summary of benchmark results including average time per task and statistics on context length.
+    """
+    # Load tokenizer and initialize Challenger instance
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    challenger = Challenger()
 
-with open("benchmark_dataset.json", "w") as f:
-    json.dump(dataset_items, f)
+    # Define task types and initialize logs
+    tasks = ["question_answering", "reconstruction", "conversation"]
+    time_logs = {task: 0 for task in tasks}
+    error_count = 0
+    dataset_items = []
+    context_lengths = []
+
+    # Start progress bar for total iterations
+    total_iterations = n_iterations * len(tasks)
+    pbar = tqdm(total=total_iterations, desc="Benchmarking", unit="task")
+
+    for i in range(n_iterations):
+        for task in tasks:
+            try:
+                start_time = time.time()
+
+                # Generate protocol using Challenger
+                protocol = challenger(tokenizer, task, max_characters)
+
+                # Record details of the generated sample
+                item = {
+                    "task": task,
+                    "id": i,
+                    "context": protocol.context,
+                    "activation_prompt": protocol.activation_prompt,
+                    "expected_completion": protocol.expected_completion,
+                    "model_id": model_name,
+                    "max_characters": max_characters,
+                }
+
+                # Track time taken for task
+                time_logs[task] += time.time() - start_time
+
+                # Store context length for analysis
+                context_lengths.append(len(item["context"]))
+
+                # Add item to dataset items
+                dataset_items.append(item)
+
+            except Exception as e:
+                print(f"Error during task '{task}' at iteration {i}: {e}")
+                error_count += 1
+                continue
+
+            # Update progress bar
+            pbar.update(1)
+
+    # Close progress bar
+    pbar.close()
+
+    # Calculate average processing time per task
+    avg_time_logs = {
+        task: total_time / n_iterations for task, total_time in time_logs.items()
+    }
+    error_rate = error_count / total_iterations
+
+    # Display benchmark summary
+    print("\nBenchmark Summary:")
+    print(f"Error count: {error_count}")
+    print(f"Error rate: {error_rate:.2%}")
+    print("Average processing times (seconds):", avg_time_logs)
+
+    # Analyze context lengths
+    context_lengths = np.array(context_lengths)
+    mean_length = context_lengths.mean()
+    std_length = context_lengths.std()
+
+    print("\nContext length statistics:")
+    print(f"Mean: {mean_length:.2f} characters")
+    print(f"Standard Deviation: {std_length:.2f} characters")
+
+    # Save dataset items to JSON file
+    with open("benchmark_dataset.json", "w") as file:
+        json.dump(dataset_items, file)
+
+    # Return summary of results
+    return {
+        "error_count": error_count,
+        "error_rate": error_rate,
+        "avg_time_per_task": avg_time_logs,
+        "context_length_mean": mean_length,
+        "context_length_std": std_length,
+    }
+
+
+# Run benchmark
+benchmark_results = benchmark_challenger(
+    n_iterations=20000,
+    max_characters=10000,
+    model_name="Condense-AI/Mistral-7B-Instruct-v0.2",
+)
+print("\nBenchmarking completed. Results:", benchmark_results)

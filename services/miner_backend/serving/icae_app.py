@@ -2,7 +2,7 @@ import torch
 from transformers import HfArgumentParser
 from peft import LoraConfig
 
-from ICAE import ICAE, ModelArguments, AdditionalArguments
+from .ICAE import ICAE, ModelArguments, AdditionalArguments
 from safetensors.torch import load_file
 import rich
 import litserve as ls
