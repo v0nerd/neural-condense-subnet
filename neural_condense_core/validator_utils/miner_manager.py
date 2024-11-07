@@ -133,7 +133,7 @@ class MinerManager:
         with httpx.Client() as client:
             response = client.post(
                 url,
-                json=payload.model_dump(),
+                json=payload,
                 headers=headers,
                 timeout=32,
             )
