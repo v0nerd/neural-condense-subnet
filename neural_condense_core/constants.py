@@ -97,6 +97,7 @@ class Constants(BaseModel):
     BATCH_SIZE: int = 4
     SCORE_MOVING_AVERAGE: float = 0.05
     ORGANIC_CLIENT_URL: str = "https://ncs-client.condenses.ai"
+    REPORT_URL: str = "https://report.condenses.ai"
 
     # Adjust values based on NETWORK environment variable
     def __init__(self, **data):
