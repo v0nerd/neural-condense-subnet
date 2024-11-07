@@ -116,7 +116,7 @@ class MinerManager:
             axons,
             synapse,
             deserialize=False,
-            timeout=4,
+            timeout=16,
         )
         bt.logging.info(f"Responses: {responses}")
         for uid, response in zip(uids, responses):
