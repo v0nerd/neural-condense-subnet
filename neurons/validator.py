@@ -19,12 +19,15 @@ class Validator(ncc.BaseValidator):
         self.miner_manager = ncc.MinerManager(self)
         self.challenger = ncc.Challenger()
         if self.config.validator.gate_port:
-            self.organic_gate = ncc.OrganicGate(
-                miner_manager=self.miner_manager,
-                wallet=self.wallet,
-                config=self.config,
-                metagraph=self.metagraph,
-            )
+            try:
+                self.organic_gate = ncc.OrganicGate(
+                    miner_manager=self.miner_manager,
+                    wallet=self.wallet,
+                    config=self.config,
+                    metagraph=self.metagraph,
+                )
+            except Exception as e:
+                bt.logging.error(f"Starting organic gate error: {e}")
             bt.logging.info("Starting organic gate.")
 
     def forward(self):

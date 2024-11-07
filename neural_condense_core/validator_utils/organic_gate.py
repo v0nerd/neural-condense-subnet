@@ -59,20 +59,28 @@ class OrganicGate:
         self.client_axon: bt.AxonInfo = None
         self.message = "".join(random.choices("0123456789abcdef", k=16))
         self.start_server()
-        self.register_to_client()
+        self.loop.create_task(self.register_to_client())
 
-    def register_to_client(self):
+    async def _run_function_periodically(self, function, interval):
+        while True:
+            bt.logging.info(
+                f"Running function {function.__name__} every {interval} seconds."
+            )
+            await function()
+            await asyncio.sleep(interval)
+
+    async def register_to_client(self):
         payload = RegisterPayload(port=self.config.validator.gate_port)
-        self.call(payload, timeout=12)
+        await self.call(payload, timeout=12)
 
-    def _authenticate(self, request: Request):
+    async def _authenticate(self, request: Request):
         message = request.headers["message"]
         if message != self.message:
             raise Exception("Authentication failed.")
 
     async def forward(self, request: Request):
         try:
-            self._authenticate(request)
+            await self._authenticate(request)
             bt.logging.info("Forwarding organic request.")
             request: OrganicPayload = OrganicPayload(**await request.json())
             synapse = TextCompressProtocol(
@@ -129,7 +137,7 @@ class OrganicGate:
     async def health_check(self):
         return {"status": "healthy"}
 
-    def call(
+    async def call(
         self,
         payload: RegisterPayload,
         timeout: float = 12.0,
@@ -157,8 +165,8 @@ class OrganicGate:
             "signature": signature,
         }
 
-        with httpx.Client() as client:
-            response = client.post(
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
                 url,
                 json=payload.model_dump(),
                 headers=headers,
