@@ -44,6 +44,7 @@ class MinerManager:
         self.default_metadata_items = [
             ("tier", "unknown"),
         ]
+        self.config = validator.config
         self.metadata = self._init_metadata()
         bt.logging.info(f"Metadata: {self.metadata}")
         self.state_path = self.validator.config.full_path + "/state.json"
