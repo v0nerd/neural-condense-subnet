@@ -2,6 +2,8 @@ import json
 import os
 import bittensor as bt
 import numpy as np
+import random
+import httpx
 from ..common import build_rate_limit
 from ..protocol import Metadata
 from ..constants import constants
@@ -36,14 +38,17 @@ class MinerManager:
 
     def __init__(self, validator):
         self.validator = validator
-        self.dendrite = bt.dendrite(wallet=validator.wallet)
+        self.wallet = validator.wallet
+        self.dendrite = bt.dendrite(wallet=self.wallet)
         self.metagraph = validator.metagraph
         self.default_metadata_items = [
             ("tier", "unknown"),
         ]
+        self.config = validator.config
         self.metadata = self._init_metadata()
         bt.logging.info(f"Metadata: {self.metadata}")
         self.state_path = self.validator.config.full_path + "/state.json"
+        self.message = "".join(random.choices("0123456789abcdef", k=16))
         self.load_state()
         self.sync()
 
@@ -102,6 +107,43 @@ class MinerManager:
         self.serving_counter: dict[str, dict[int, ServingCounter]] = (
             self._create_serving_counter()
         )
+        try:
+            self._report()
+        except Exception as e:
+            bt.logging.error(f"Failed to report metadata: {e}")
+
+    def _report(self):
+        r"""
+        Reports the metadata of the miners.
+        """
+        url = f"{self.config.validator.report_url}/api/report"
+        signature = f"0x{self.dendrite.keypair.sign(self.message).hex()}"
+
+        headers = {
+            "Content-Type": "application/json",
+            "message": self.message,
+            "ss58_address": self.wallet.hotkey.ss58_address,
+            "signature": signature,
+        }
+
+        payload = {
+            "metadata": self.metadata,
+        }
+
+        with httpx.Client() as client:
+            response = client.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=32,
+            )
+
+        if response.status_code != 200:
+            bt.logging.error(
+                f"Failed to report metadata to the Validator Server. Response: {response.text}"
+            )
+        else:
+            bt.logging.success("Reported metadata to the Validator Server.")
 
     def _update_metadata(self):
         r"""

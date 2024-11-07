@@ -45,6 +45,13 @@ def add_validator_config(parser: ArgumentParser):
         default=constants.ORGANIC_CLIENT_URL,
         help="The URL of the organic client.",
     )
+
+    parser.add_argument(
+        "--validator.report_url",
+        type=str,
+        default=constants.REPORT_URL,
+        help="The URL of the report server.",
+    )
     return parser
 
 
