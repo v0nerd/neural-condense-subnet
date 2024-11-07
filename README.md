@@ -22,6 +22,8 @@
 - 📊 **Tiered System**: The subnet has a tiered system, with a research tier for experimentation and an inference tier for production-scale use. Incentive distribution is splitted for each tier.
 - 📏 **Benchmarking and Validation**: The subnet owner defines synthetic metrics to benchmark miners’ performance, ensuring quality and efficiency.
 
+![condense](https://github.com/user-attachments/assets/87060854-57bd-4b9b-9b06-b1edf87d182a)
+
 ### ⚙️ Node Tiers
 
 
