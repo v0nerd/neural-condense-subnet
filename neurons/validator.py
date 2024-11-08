@@ -41,6 +41,12 @@ class Validator(ncc.BaseValidator):
         for thread in threads:
             thread.join()
 
+        try:
+            self.miner_manager._report()
+            self.miner_manager.save_state()
+        except Exception as e:
+            bt.logging.error(f"Failed to report metadata & save-state: {e}")
+
     def _forward_tier(self, tier):
         supporting_models = ncc.constants.TIER_CONFIG[tier].supporting_models
         model_name = random.choice(supporting_models)

@@ -72,11 +72,6 @@ pm2 start python --name condense_validator \
 --wallet.hotkey $val_hotkey \
 --axon.port $val_axon_port \
 --validator.gate_port $val_gate_port \
---validator.scoring_backend.host $val_backend_host \
---validator.scoring_backend.port $val_backend_port
-```
-
-If you want to update the parameters, you can use the following command:
-```bash
-pm2 restart condense_validator --update-env
+--validator.score_backend.host $val_backend_host \
+--validator.score_backend.port $val_backend_port
 ```

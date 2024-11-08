@@ -71,10 +71,9 @@ miner_subtensor_network="finney"
 4. Run the miner backend. Example of using our baseline ICAE as a backend (https://github.com/getao/icae):
 ```bash
 pm2 start python --name condense_miner_backend \
--- -m services.miner_backend.serving.icae_app \
---port $miner_backend_port \
---devices 0 \
---workers_per_device 1
+-- -m gunicorn services.miner_backend.serving.icae_app:app \
+--timeout 120 \
+--bind 0.0.0.0:$miner_backend_port
 ```
 
 5. Run the mining script
@@ -89,9 +88,4 @@ pm2 start python --name condense_miner \
 --miner.backend_host $miner_backend_host \
 --miner.backend_port $miner_backend_port \
 --axon.port $miner_axon_port
-```
-
-- If you want to update the parameters, you can use the following command:
-```bash
-pm2 restart condense_miner --update-env
 ```
