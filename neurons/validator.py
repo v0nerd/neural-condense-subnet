@@ -54,21 +54,34 @@ class Validator(ncc.BaseValidator):
         serving_counter: dict[int, ncc.ServingCounter] = (
             self.miner_manager.serving_counter.get(tier, {})
         )
-        bandwidth = sum([serving_counter[uid].rate_limit for uid in serving_counter])
-        bandwidth_to_synthetic = int(
-            bandwidth * ncc.constants.RPE_PERCENTAGE_FOR_SYNTHETIC
+        total_bandwidth = sum(
+            [serving_counter[uid].rate_limit for uid in serving_counter]
         )
-        n_batch = bandwidth_to_synthetic // ncc.constants.BATCH_SIZE
+
+        total_bandwidth_to_synthetic = int(
+            total_bandwidth * ncc.constants.RPE_PERCENTAGE_FOR_SYNTHETIC
+        )
+        avg_bandwidth_to_synthetic = total_bandwidth_to_synthetic // len(
+            serving_counter
+        )
+        batch_size = min(
+            ncc.constants.BATCH_SIZE,
+            len(serving_counter),
+        )
+        n_batch = avg_bandwidth_to_synthetic // ncc.constants.BATCH_SIZE
         if n_batch:
             sleep_per_batch = ncc.constants.EPOCH_LENGTH // n_batch
         else:
             sleep_per_batch = ncc.constants.EPOCH_LENGTH
-            n_batch = bandwidth_to_synthetic
+            n_batch = avg_bandwidth_to_synthetic
 
         log = (
             f"Tier: {tier}\n"
-            f"Bandwidth: {bandwidth}\n"
-            f"Bandwidth to synthetic: {bandwidth_to_synthetic}\n"
+            f"Model: {model_name}\n"
+            f"Total bandwidth: {total_bandwidth}\n"
+            f"Total bandwidth to synthetic: {total_bandwidth_to_synthetic}\n"
+            f"Avg bandwidth to synthetic: {avg_bandwidth_to_synthetic}\n"
+            f"Batch size: {batch_size}\n"
             f"Number of batches: {n_batch}\n"
             f"Sleep per batch: {sleep_per_batch}\n"
         )

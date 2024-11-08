@@ -25,7 +25,7 @@ class Constants(BaseModel):
     TIER_CONFIG: dict[str, TierConfig] = {
         "research": TierConfig(
             incentive_percentage=1.0,
-            requests_per_epoch=1024,
+            requests_per_epoch=256,
             timeout=64,
             scoring_lambda=lambda x: x["normalized_score_in_batch"]
             - 0.2 * x["process_time/timeout"]
