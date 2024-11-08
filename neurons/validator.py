@@ -173,13 +173,13 @@ class Validator(ncc.BaseValidator):
                         bt.logging.info(
                             f"Invalid response from uid {uid}, {response.is_success}"
                         )
-                        self.miner_manager.update_scores([uid], [0])
+                        self.miner_manager.update_scores([0], [uid])
                     else:
                         valid_responses.append(response)
                         valid_uids.append(uid)
                 except Exception as e:
                     bt.logging.error(f"Pre-reward Error: {e}")
-                    self.miner_manager.update_scores([uid], [0])
+                    self.miner_manager.update_scores([0], [uid])
             if not valid_responses:
                 bt.logging.info("No valid responses.")
             if valid_responses and random.random() < rewarding_frequency:
