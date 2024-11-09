@@ -392,10 +392,14 @@ class ScoringService:
         the expected completion.
         """
         try:
-            prompt = f"Task description: Given a ground truth completion and a model completion, answer yes if the model completion is correct, and no otherwise. - Ground truth completion: {expected_completion} - Model completion: {completion} Result:"
-            input_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(
-                model.device
-            )
+            prompt = f"""Task description: Given a ground truth completion and a model completion, answer yes if the model completion is correct, and no otherwise. 
+            - Ground truth completion: {expected_completion}
+            - Model completion: {completion}
+            """
+            messages = [{"role": "user", "content": prompt}]
+            input_ids = tokenizer.apply_chat_template(
+                messages, tokenize=True, return_tensors="pt", add_generation_prompt=True
+            ).to(self.device)
             generated_outputs = model.generate(
                 input_ids=input_ids,
                 max_new_tokens=max_new_tokens,
@@ -412,6 +416,7 @@ class ScoringService:
             print(f"Error in _llm_judge: {e}")
             return True
 
+
     def _smooth_scores(self, scores: list[float], delta_0=0.3, decay=0.5):
         """
         Smooths the scores based on a ranking system with an exponential decay.
@@ -419,28 +424,37 @@ class ScoringService:
         Parameters:
         - scores: An unsorted list of scores.
         - delta_0: The initial decrement factor (default is 0.3).
-        - alpha: The exponential decay factor (default is 1.5).
+        - decay: The exponential decay factor (default is 0.5).
 
         Returns:
         - A list of smoothed scores where:
             - Rank 1 gets 1.0,
             - Rank 2 gets 1 - delta_0,
-            - Rank 3 gets 1 - delta_0 - delta_0*alpha,
-            - Rank 4 gets 1 - delta_0 - delta_0*alpha - delta_0*alpha^2, etc.
+            - Rank 3 gets 1 - delta_0 - delta_0 * decay,
+            - Rank 4 gets 1 - delta_0 - delta_0 * decay - delta_0 * decay^2, etc.
+        If there are ties, the scores are averaged.
         """
-        indexed_scores = [(i, score) for i, score in enumerate(scores)]
-        sorted_scores = sorted(indexed_scores, key=lambda x: x[1], reverse=True)
+        sorted_scores = sorted(
+            scores, reverse=True
+        )  # Sort scores descending for ranking
+        smoothed_scores = [1.0]  # First rank is 1.0
+        decrement = delta_0
 
-        smoothed_scores = [0.0] * len(scores)  # Initialize the output list
-        rank_value = 1.0  # Start with the highest rank
-        for i, (index, score) in enumerate(sorted_scores):
-            if i != 0 and abs(score - sorted_scores[i - 1][1]) < 1e-6:
-                smoothed_scores[index] = rank_value
+        for i in range(1, len(sorted_scores)):
+            diff = abs(sorted_scores[i - 1] - sorted_scores[i])
+            if diff < 0.01:
+                smoothed_scores.append(
+                    smoothed_scores[i - 1]
+                )  # If tied, assign the same smoothed score
             else:
-                smoothed_scores[index] = rank_value
-                rank_value -= delta_0 * (decay**i)
+                smoothed_scores.append(smoothed_scores[i - 1] - decrement)
+                decrement *= decay  # Apply exponential decay to the decrement factor
 
-        return smoothed_scores
+        # Map back to the original order of scores
+        score_mapping = {
+            score: smoothed for score, smoothed in zip(sorted_scores, smoothed_scores)
+        }
+        return [score_mapping[score] for score in scores]
 
 
 app = FastAPI()

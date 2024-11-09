@@ -47,3 +47,41 @@ On the early launch of the subnet, we distribute all the incentives to the resea
 ## 📚 Documentation
 - **Setup for miners**: [Miner Setup](./docs/miner.md)
 - **Setup for validators**: [Validator Setup](./docs/validator.md)
+ 
+
+## 📊 Score Calculation Overview
+
+The scoring system calculates metrics like **loss**, **accuracy**, and **reward model scores** for model-generated responses. These scores help assess the quality of model completions based on given criteria, outlined below:
+
+### Criteria for Scoring
+
+1. **Loss-Based Scoring**:
+   - **Purpose**: This metric measures the difference between the expected and generated tokens, using the cross-entropy loss function.
+   - **Method**:
+     - Tokenize both the `activation_prompt` and `expected_completion`.
+     - Feed the tokens into the model along with the compressed tokens from miner responses.
+     - Calculate cross-entropy loss between generated logits and actual labels.
+     - Loss values are then transformed into scores through `loss_to_scores` for interpretability.
+
+2. **Accuracy-Based Scoring**:
+   - **Purpose**: Measures how closely the model-generated response matches the `expected_completion`.
+   - **Method**:
+     - Generate a response based on the miner response tokens.
+     - Tokenize and compare the generated output to the `expected_completion` to judge its accuracy.
+     - The model uses a function `_llm_judge` to determine if the generated output matches the expected result.
+
+3. **Reward Model Scoring**:
+   - **Purpose**: Assigns a reward score based on the model's response quality.
+   - **Method**:
+     - Combine miner response embeddings with the `activation_prompt` and generate a response.
+     - Feed this conversation structure into a reward model to score the assistant's response.
+
+### Smoothing Scores
+
+To improve stability, scores are smoothed using an exponential decay ranking system. 
+- **Mechanism**: Higher-ranked scores start at 1.0, and subsequent ranks decrease exponentially based on parameters `delta_0` and `decay`.
+- **Outcome**: This reduces score variance and emphasizes top responses.
+
+Each of these calculations contributes to an overall score that assesses model response quality against predefined criteria.
+
+
