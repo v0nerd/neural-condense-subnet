@@ -56,6 +56,7 @@ class Validator(ncc.BaseValidator):
         )
         if len(serving_counter) == 0:
             bt.logging.info(f"No miners in tier {tier}.")
+            return
         total_bandwidth = sum(
             [serving_counter[uid].rate_limit for uid in serving_counter]
         )
