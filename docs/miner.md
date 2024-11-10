@@ -57,7 +57,7 @@ pip install "numpy<2"
 
 **Important**: `axon_port` must be opened in your firewall.
 
-**Define bash variable**
+**Define bash variable in your terminal**
 ```bash
 miner_tier="inference_0"
 miner_wallet="my_wallet"
@@ -65,7 +65,7 @@ miner_hotkey="my_hotkey"
 miner_backend_host="localhost"
 miner_backend_port=8080
 miner_axon_port=12345
-miner_netuid=52
+miner_netuid=47
 miner_subtensor_network="finney"
 ```
 

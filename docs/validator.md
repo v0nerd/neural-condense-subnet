@@ -44,6 +44,7 @@ pip install "numpy<2"
 
 **Important**: `axon_port` and `gate_port` must be opened in your firewall.
 
+**Define bash variable in your terminal**
 ```bash
 val_wallet="my_wallet"
 val_hotkey="my_hotkey"
@@ -51,7 +52,7 @@ val_backend_host="localhost"
 val_backend_port=8080
 val_axon_port=12345
 val_gate_port=12346
-val_netuid=52
+val_netuid=47
 val_subtensor_network="finney"
 ```
 
