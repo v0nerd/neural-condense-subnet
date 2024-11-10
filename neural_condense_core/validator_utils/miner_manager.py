@@ -101,7 +101,7 @@ class MinerManager:
                 "score": 0.0,
                 "tier": "unknown",
             }
-            for uid in self.metagraph.uids
+            for int(uid) in self.metagraph.uids
         }
         return metadata
 
