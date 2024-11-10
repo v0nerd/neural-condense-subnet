@@ -97,11 +97,11 @@ class MinerManager:
         Initializes the metadata of the miners.
         """
         metadata = {
-            uid: {
+            int(uid): {
                 "score": 0.0,
                 "tier": "unknown",
             }
-            for int(uid) in self.metagraph.uids
+            for uid in self.metagraph.uids
         }
         return metadata
 
