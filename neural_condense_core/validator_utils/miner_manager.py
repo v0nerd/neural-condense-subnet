@@ -47,7 +47,6 @@ class MinerManager:
         ]
         self.config = validator.config
         self.metadata = self._init_metadata()
-        bt.logging.info(f"Metadata: {self.metadata}")
         self.state_path = self.validator.config.full_path + "/state.json"
         self.message = "".join(random.choices("0123456789abcdef", k=16))
         self.load_state()
@@ -74,6 +73,7 @@ class MinerManager:
         try:
             state = json.load(open(self.state_path, "r"))
             self.metadata = state["metadata"]
+            self._log_metadata()
             bt.logging.success("Loaded state.")
         except Exception as e:
             bt.logging.error(f"Failed to load state: {e}")
@@ -107,6 +107,9 @@ class MinerManager:
         self.serving_counter: dict[str, dict[int, ServingCounter]] = (
             self._create_serving_counter()
         )
+        self._log_metadata()
+
+    def _log_metadata(self):
         # Log metadata as pandas dataframe with 3 cols: uid, tier, score
         metadata_df = pd.DataFrame(self.metadata).T
         metadata_df = metadata_df.reset_index()

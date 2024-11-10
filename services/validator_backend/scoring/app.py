@@ -309,9 +309,12 @@ class ScoringService:
                         max_new_tokens=64,
                         num_return_sequences=1,
                     )
-                    completion = tokenizer.decode(
-                        generated_outputs[0], skip_special_tokens=True
-                    ).strip()
+                    completion = (
+                        tokenizer.decode(
+                            generated_outputs[0], skip_special_tokens=True
+                        ).strip()
+                        or "I dont know"
+                    )
                     accuracy = self._llm_judge(
                         expected_completion, completion, model, tokenizer
                     )
@@ -396,6 +399,8 @@ class ScoringService:
             - Ground truth completion: {expected_completion}
             - Model completion: {completion}
             """
+            # Remove special tokens and instruction tags, TODO: make it general
+            prompt.replace("</s>", "").replace("[/INST]", "")
             pipeline = TextGenerationPipeline(model, tokenizer, device=self.device)
             messages = [{"role": "user", "content": prompt}]
             completion_text = pipeline(
