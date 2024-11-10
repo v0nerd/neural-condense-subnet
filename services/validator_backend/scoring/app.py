@@ -404,7 +404,7 @@ class ScoringService:
                 input_ids=input_ids,
                 max_new_tokens=max_new_tokens,
                 num_return_sequences=1,
-            )
+            )[0]
             logger.info(generated_outputs.shape, input_ids.shape)
             generated_outputs = generated_outputs[:, input_ids.shape[1] :]
             completion_text = (
