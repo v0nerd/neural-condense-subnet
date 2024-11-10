@@ -118,6 +118,9 @@ class MinerManager:
     def _log_metadata(self):
         # Log metadata as pandas dataframe with 3 cols: uid, tier, score
         metadata_df = pd.DataFrame(self.metadata).T
+        # Drop loss column if it exists
+        if "loss" in metadata_df.columns:
+            metadata_df = metadata_df.drop(columns=["loss"])
         metadata_df = metadata_df.reset_index()
         metadata_df.columns = ["uid", "tier", "score"]
         bt.logging.info("\n" + metadata_df.to_string(index=True))
