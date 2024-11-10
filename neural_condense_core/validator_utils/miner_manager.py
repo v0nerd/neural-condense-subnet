@@ -4,6 +4,7 @@ import bittensor as bt
 import numpy as np
 import random
 import httpx
+import pandas as pd
 from ..common import build_rate_limit
 from ..protocol import Metadata
 from ..constants import constants
@@ -106,6 +107,11 @@ class MinerManager:
         self.serving_counter: dict[str, dict[int, ServingCounter]] = (
             self._create_serving_counter()
         )
+        # Log metadata as pandas dataframe with 3 cols: uid, tier, score
+        metadata_df = pd.DataFrame(self.metadata).T
+        metadata_df = metadata_df.reset_index()
+        metadata_df.columns = ["uid", "tier", "score"]
+        bt.logging.info("\n" + metadata_df.to_string(index=True))
 
     def _report(self):
         r"""
