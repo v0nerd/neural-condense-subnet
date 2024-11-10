@@ -1,4 +1,14 @@
 from setuptools import setup, find_packages
+from os import path
+
+
+def read_requirements(path):
+    with open(path, "r") as f:
+        requirements = f.read().splitlines()
+        return requirements
+
+
+requirements = read_requirements("requirements.txt")
 
 setup(
     name="neural_condense_subnet",  # Your package name
@@ -10,6 +20,7 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/condenses/neural-condense-subnet",  # GitHub repo URL
     packages=find_packages(),  # Automatically find packages in the directory
+    install_requires=requirements,
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
