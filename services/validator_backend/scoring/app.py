@@ -8,6 +8,7 @@ from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
+    TextGenerationPipeline,
 )
 
 from .utils import loss_to_scores
@@ -83,6 +84,15 @@ class ScoringService:
             num_labels=1,
         )
         self.rm_tokenizer = AutoTokenizer.from_pretrained(reward_model_name)
+        self.pipeline = TextGenerationPipeline(
+            self.rm_model,
+            self.rm_tokenizer,
+            device=self.device,
+        )
+        output_text = self.pipeline(
+            "Hello, world! Here is a story", return_full_text=False, max_new_tokens=16
+        )
+        logger.info(f"Pipeline output: {output_text}")
         self.models = {}
         self.tokenizers = {}
         self.lock = threading.Lock()
@@ -392,7 +402,7 @@ class ScoringService:
         the expected completion.
         """
         try:
-            prompt = f"""Task description: Given a ground truth completion and a model completion, answer yes if the model completion is correct, and no otherwise. 
+            prompt = f"""Task description: Given a ground truth completion and a model completion, answer concisely: yes if the model completion is correct, and no otherwise. 
             - Ground truth completion: {expected_completion}
             - Model completion: {completion}
             """
@@ -400,18 +410,11 @@ class ScoringService:
             input_ids = tokenizer.apply_chat_template(
                 messages, tokenize=True, return_tensors="pt", add_generation_prompt=True
             ).to(self.device)
-            generated_outputs = model.generate(
-                input_ids=input_ids,
+            completion_text = self.pipeline(
+                input_ids,
+                return_full_text=False,
                 max_new_tokens=max_new_tokens,
-                num_return_sequences=1,
-            )
-            logger.info(generated_outputs[0].shape, input_ids[0].shape)
-            generated_outputs = generated_outputs[:, input_ids[0].shape[1] :]
-            completion_text = (
-                tokenizer.decode(generated_outputs, skip_special_tokens=True)
-                .strip()
-                .lower()
-            )
+            )[0]["generated_text"]
             logger.info(
                 (
                     f"Expected: {expected_completion}\n"
