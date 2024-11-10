@@ -407,11 +407,8 @@ class ScoringService:
             - Model completion: {completion}
             """
             messages = [{"role": "user", "content": prompt}]
-            input_ids = tokenizer.apply_chat_template(
-                messages, tokenize=True, return_tensors="pt", add_generation_prompt=True
-            ).to(self.device)
             completion_text = self.pipeline(
-                input_ids,
+                messages,
                 return_full_text=False,
                 max_new_tokens=max_new_tokens,
             )[0]["generated_text"]
