@@ -28,8 +28,8 @@ class Constants(BaseModel):
             requests_per_epoch=256,
             timeout=32,
             scoring_lambda=lambda x: x["normalized_score_in_batch"]
-            - 0.2 * x["process_time/timeout"]
-            + 0.2 * x["compress_rate_reward"],
+            - 0.1 * x["process_time/timeout"]
+            + 0.1 * x["compress_rate_reward"],
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
             max_condensed_tokens=1024,
             min_condensed_tokens=128,
@@ -42,8 +42,8 @@ class Constants(BaseModel):
             scoring_lambda=lambda x: max(
                 0,
                 x["normalized_score_in_batch"]
-                - 0.2 * x["process_time/timeout"]
-                + 0.2 * x["compress_rate_reward"],
+                - 0.1 * x["process_time/timeout"]
+                + 0.1 * x["compress_rate_reward"],
             ),
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
             max_condensed_tokens=1024,
@@ -57,8 +57,8 @@ class Constants(BaseModel):
             scoring_lambda=lambda x: max(
                 0,
                 x["normalized_score_in_batch"]
-                - 0.2 * x["process_time/timeout"]
-                + 0.2 * x["compress_rate_reward"],
+                - 0.1 * x["process_time/timeout"]
+                + 0.1 * x["compress_rate_reward"],
             ),
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
             max_condensed_tokens=2048,
