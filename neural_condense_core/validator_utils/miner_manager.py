@@ -56,13 +56,15 @@ class MinerManager:
         r"""
         Updates the scores of the miners.
         """
-        losses = logs["losses"]
-        for score, uid, log in zip(scores, uids, losses):
+        losses = logs.get("losses", [])
+        for score, uid in zip(scores, uids):
             self.metadata[uid]["score"] = (
                 constants.SCORE_MOVING_AVERAGE * score
                 + (1 - constants.SCORE_MOVING_AVERAGE) * self.metadata[uid]["score"]
             )
-            self.metadata[uid]["loss"] = log
+        if len(losses) > 0:
+            for loss, uid in zip(losses, uids):
+                self.metadata[uid]["loss"] = loss
 
     def get_normalized_scores(self, eps: float = 1e-6) -> np.ndarray:
         scores = np.zeros(len(self.metagraph.hotkeys))
