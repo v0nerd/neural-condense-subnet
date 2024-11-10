@@ -27,6 +27,7 @@ cd neural-condense-subnet
 2. Install the dependencies
 ```bash
 pip install -e .
+pip install "numpy<2"
 ```
 
 3. Config your wallet, backend host, and port. Below just an example:

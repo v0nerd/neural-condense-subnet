@@ -39,6 +39,7 @@ cd neural-condense-subnet
 2. Install the dependencies
 ```bash
 pip install -e .
+pip install "numpy<2"
 . services/miner_backend/serving/download_checkpoint.sh
 ```
 
