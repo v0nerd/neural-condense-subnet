@@ -311,8 +311,6 @@ class ScoringService:
                     completion = tokenizer.decode(
                         generated_outputs[0], skip_special_tokens=True
                     ).strip()
-                    logger.info(f"Completion: {completion}")
-                    logger.info(f"Expected Completion: {expected_completion}")
                     accuracy = self._llm_judge(
                         expected_completion, completion, model, tokenizer
                     )
@@ -385,7 +383,7 @@ class ScoringService:
             print(f"Error in unit_test: {e}")
 
     def _llm_judge(
-        self, expected_completion, completion, model, tokenizer, max_new_tokens=16
+        self, expected_completion, completion, model, tokenizer, max_new_tokens=64
     ):
         """
         Generates a yes or no judgment on the accuracy of the model's completion compared to
@@ -409,6 +407,14 @@ class ScoringService:
                 tokenizer.decode(generated_outputs[0], skip_special_tokens=True)
                 .strip()
                 .lower()
+            )
+            logger.info(
+                (
+                    f"Expected: {expected_completion}\n"
+                    f"Completion: {completion}\n"
+                    f"Prompt: {prompt}\n"
+                    f"Generated: {completion_text}"
+                )
             )
             return "yes" in completion_text
         except Exception as e:
