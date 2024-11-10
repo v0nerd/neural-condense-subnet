@@ -240,7 +240,7 @@ class Validator(ncc.BaseValidator):
                     f"Scores: {scores}\nFactors: {factors_list}\nPenalized scores: {penalized_scores}"
                 )
                 penalized_scores = [min(1, max(0, score)) for score in penalized_scores]
-                self.miner_manager.update_scores(penalized_scores, valid_uids)
+                self.miner_manager.update_scores(penalized_scores, valid_uids, logs)
         except Exception as e:
             bt.logging.error(f"Error: {e}")
 
