@@ -416,8 +416,7 @@ class ScoringService:
             print(f"Error in _llm_judge: {e}")
             return True
 
-
-    def _smooth_scores(self, scores: list[float], delta_0=0.3, decay=0.5):
+    def _smooth_scores(self, scores: list[float], delta_0=0.4, decay=0.7):
         """
         Smooths the scores based on a ranking system with an exponential decay.
 
