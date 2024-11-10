@@ -99,7 +99,7 @@ class ScoringService:
             try:
                 if model_name not in self.models:
                     self.models[model_name] = AutoModelForCausalLM.from_pretrained(
-                        model_name, torch_dtype=torch.bfloat16
+                        model_name
                     )
                     self.models[model_name].to(self.device)
                     self.tokenizers[model_name] = AutoTokenizer.from_pretrained(
