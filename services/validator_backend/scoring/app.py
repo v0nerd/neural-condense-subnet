@@ -76,14 +76,16 @@ class ScoringService:
         """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         reward_model_name = "Skywork/Skywork-Reward-Llama-3.1-8B-v0.2"
-        self.rm_model = AutoModelForSequenceClassification.from_pretrained(
-            reward_model_name,
-            torch_dtype=torch.bfloat16,
-            device_map=self.device,
-            attn_implementation="flash_attention_2",
-            num_labels=1,
-        )
-        self.rm_tokenizer = AutoTokenizer.from_pretrained(reward_model_name)
+        # Temporarily disable the reward model until next update to see how miners perforn on losses and accuracy
+        if False:
+            self.rm_model = AutoModelForSequenceClassification.from_pretrained(
+                reward_model_name,
+                torch_dtype=torch.bfloat16,
+                device_map=self.device,
+                attn_implementation="flash_attention_2",
+                num_labels=1,
+            )
+            self.rm_tokenizer = AutoTokenizer.from_pretrained(reward_model_name)
         self.models = {}
         self.tokenizers = {}
         self.lock = threading.Lock()
@@ -97,7 +99,7 @@ class ScoringService:
             try:
                 if model_name not in self.models:
                     self.models[model_name] = AutoModelForCausalLM.from_pretrained(
-                        model_name
+                        model_name, torch_dtype=torch.bfloat16
                     )
                     self.models[model_name].to(self.device)
                     self.tokenizers[model_name] = AutoTokenizer.from_pretrained(
