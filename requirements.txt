@@ -1,5 +1,5 @@
 transformers==4.45.2
-bittensor==8.2.0
+bittensor
 accelerate==1.0.1
 datasets==3.0.2
 pre-commit==4.0.1
@@ -8,4 +8,4 @@ sentencepiece==0.2.0
 protobuf==5.28.3
 flask==3.0.3
 gunicorn==23.0.0
-"numpy<2"
+numpy<2
