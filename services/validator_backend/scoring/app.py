@@ -407,7 +407,9 @@ class ScoringService:
             )
             print(generated_outputs)
             completion_text = (
-                tokenizer.decode(generated_outputs[0], skip_special_tokens=True)
+                tokenizer.decode(
+                    generated_outputs[:, input_ids.shape[1] :], skip_special_tokens=True
+                )
                 .strip()
                 .lower()
             )
