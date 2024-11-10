@@ -76,37 +76,125 @@ On the early launch of the subnet, we distribute all the incentives to the resea
 
 ## 📊 Score Calculation Overview
 
-The scoring system calculates metrics like **loss**, **accuracy**, and **reward model scores** for model-generated responses. These scores help assess the quality of model completions based on given criteria, outlined below:
+This section provides an overview of how challenge items are created for training a token compressor for large language models (LLMs), the purpose of each task, and how scores are calculated. The goal is to compress long contexts into shorter tokens while ensuring the integrity and usefulness of the output.
 
-### Criteria for Scoring
+1. [Challenge Item Creation](#challenge-item-creation)
+    - [Datasets Used](#datasets-used)
+    - [Challenge Generation Process](#challenge-generation-process)
+2. [Purpose of Each Task](#purpose-of-each-task)
+    - [Question Answering Task](#question-answering-task)
+    - [Continual Conversation Task](#continual-conversation-task)
+    - [Reconstruction Task](#reconstruction-task)
+3. [Score Calculation](#score-calculation)
+    - [Criteria Used](#criteria-used)
+    - [Scoring Methods](#scoring-methods)
+    - [Score Smoothing](#score-smoothing)
 
-1. **Loss-Based Scoring**:
-   - **Purpose**: This metric measures the difference between the expected and generated tokens, using the cross-entropy loss function.
-   - **Method**:
-     - Tokenize both the `activation_prompt` and `expected_completion`.
-     - Feed the tokens into the model along with the compressed tokens from miner responses.
-     - Calculate cross-entropy loss between generated logits and actual labels.
-     - Loss values are then transformed into scores through `loss_to_scores` for interpretability.
+### Challenge Item Creation for Synthetic
 
-2. **Accuracy-Based Scoring**:
-   - **Purpose**: Measures how closely the model-generated response matches the `expected_completion`.
-   - **Method**:
-     - Generate a response based on the miner response tokens.
-     - Tokenize and compare the generated output to the `expected_completion` to judge its accuracy.
-     - The model uses a function `_llm_judge` to determine if the generated output matches the expected result.
+#### Datasets Used
 
-3. **Reward Model Scoring**:
-   - **Purpose**: Assigns a reward score based on the model's response quality.
-   - **Method**:
-     - Combine miner response embeddings with the `activation_prompt` and generate a response.
-     - Feed this conversation structure into a reward model to score the assistant's response.
+The challenge items are created using a combination of datasets to simulate real-world scenarios. The datasets include:
 
-### Smoothing Scores
+| Dataset Type           | Datasets Used                                      |
+|------------------------|----------------------------------------------------|
+| Question-Answering     | SQuAD v2, CoQA                                     |
+| Conversation           | Infinity Instruct, Open Math Instruct              |
+| Raw Text               | FineWeb-Pro                                        |
 
-To improve stability, scores are smoothed using an exponential decay ranking system. 
-- **Mechanism**: Higher-ranked scores start at 1.0, and subsequent ranks decrease exponentially based on parameters `delta_0` and `decay`.
-- **Outcome**: This reduces score variance and emphasizes top responses.
+#### Challenge Generation Process
 
-Each of these calculations contributes to an overall score that assesses model response quality against predefined criteria.
+The `Challenger` class in `neural_condense_core/validator_utils/synthetic_challenge.py` is responsible for generating challenge items. The process involves:
+
+1. **Loading Datasets**: Datasets are loaded and shuffled to ensure diversity.
+2. **Building Conversations**: A mixture of conversation and QA data is assembled into a conversation format.
+3. **Injecting Challenge Elements**: Special tokens (`[START-ACTIVATE-TOKEN]`, `[END-ACTIVATE-TOKEN]`) are inserted to mark the activation prompt and expected completion.
+4. **Creating Protocol**: A `TextCompressProtocol` object is created containing the `context`, `activation_prompt`, and `expected_completion`.
+
+### Purpose of Each Task
+
+There are three main tasks designed to test the token compressor's ability to handle different scenarios. The miner can't determine the task type from the challenge item, so the compressor must be trained to handle all tasks effectively and more generally.
+
+#### Question Answering Task
+
+**Objective**: Evaluate the compressor's ability to retain crucial information needed to answer a specific question based on the given context.
+
+- **Process**:
+    - A QA pair is selected and appended to mixed conversations.
+    - The `START-ACTIVATE-TOKEN` and `END-ACTIVATE-TOKEN` are placed around the question.
+    - The assistant is expected to provide the correct answer.
+
+#### Continual Conversation Task
+
+**Objective**: Test the compressor's capability to maintain the flow of conversation, ensuring context continuity.
+
+- **Process**:
+    - A new conversation is appended to the existing mixed conversations.
+    - Activation tokens are placed to signal the start of the new conversation.
+    - The assistant should continue the conversation appropriately.
+
+#### Reconstruction Task
+
+**Objective**: Assess the compressor's ability to reconstruct the original conversation format from the compressed context.
+
+- **Process**:
+    - The mixed conversations are presented in a compressed form.
+    - An activation prompt requests the assistant to rewrite the conversations in a specific format.
+    - The assistant is expected to reconstruct and format the conversations as per the prompt.
+
+### Score Calculation
+
+#### Criteria Used
+
+Scores are calculated based on the following criteria:
+
+| Criteria         | Description                                                         |
+|------------------|---------------------------------------------------------------------|
+| Loss             | Measures how well the model predicts the expected tokens.           |
+| Accuracy         | Assesses if the assistant's completion matches the expected output. |
+| Reward Model     | Uses a reward model to evaluate the quality of the assistant's response. |
+
+#### Scoring Methods
+
+1. **Loss Calculation**:
+    - The cross-entropy loss between the model's predictions and the expected tokens is computed.
+    - Lower loss indicates better performance.
+
+2. **Accuracy Calculation**:
+    - The model generates a response based on the compressed tokens.
+    - An LLM judge assesses whether the response matches the expected completion ("yes" or "no").
+
+3. **Reward Model Evaluation**:
+    - A pretrained reward model evaluates the assistant's response.
+    - Generates a reward score indicating the quality of the response.
+
+#### Score Smoothing
+
+Scores are smoothed using an exponential decay function to handle variations and ties.
+
+- **Algorithm**:
+    - **Initial Score**: The top-ranked response gets a score of 1.0.
+    - **Decrement Factor**: Starts with `delta_0` (e.g., 0.3) and decays exponentially.
+    - **Tie Handling**: Responses with similar scores are assigned the same smoothed score.
+
+- **Formula**:
+    ```
+    smoothed_score_i = smoothed_score_(i-1) - decrement
+    decrement = decrement * decay
+    ```
+
+- **Parameters**:
+    - `delta_0`: Initial decrement factor.
+    - `decay`: Exponential decay rate.
+
+### Summary
+
+The token compression challenge is designed to rigorously test the token compressor's effectiveness in various scenarios by:
+
+- Using diverse datasets to simulate real-world inputs.
+- Creating tasks that challenge different aspects of comprehension and context retention.
+- Calculating scores based on meaningful criteria and smoothing them for fairness.
+
+By understanding how the challenge items are created, the purpose behind each task, and the scoring methodology, developers can better train and evaluate token compressors for LLMs.
 
 
