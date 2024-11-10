@@ -400,7 +400,7 @@ class ScoringService:
             - Model completion: {completion}
             """
             # Remove special tokens and instruction tags, TODO: make it general
-            prompt.replace("</s>", "").replace("[/INST]", "")
+            prompt = prompt.replace("</s>", "").replace("[/INST]", "")
             pipeline = TextGenerationPipeline(model, tokenizer, device=self.device)
             messages = [{"role": "user", "content": prompt}]
             completion_text = pipeline(
