@@ -125,9 +125,11 @@ class ScoringService:
                 )
 
             if "loss" in request.ground_truth_request.criterias:
-                losses = self.calculate_loss_criteria(request, model, tokenizer)
-                logs["losses"] = losses
-                scores = self._smooth_scores(scores, delta_0=0.4, decay=0.7)
+                negative_losses = self.calculate_loss_criteria(
+                    request, model, tokenizer
+                )
+                logs["losses"] = negative_losses
+                scores = self._smooth_scores(negative_losses, delta_0=0.4, decay=0.7)
                 outputs.append(scores)
 
             if "accuracy" in request.ground_truth_request.criterias:
