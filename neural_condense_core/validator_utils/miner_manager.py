@@ -157,9 +157,11 @@ class MinerManager:
         It doesn't consume validator's serving counter.
         """
         synapse = Metadata()
-        metadata = {}
+        metadata = self.metadata.copy()  # Start with a copy of the current metadata
         uids = [uid for uid in range(len(self.metagraph.hotkeys))]
         axons = [self.metagraph.axons[uid] for uid in uids]
+        
+        # Query responses from axons
         responses = self.dendrite.query(
             axons,
             synapse,
@@ -167,26 +169,37 @@ class MinerManager:
             timeout=16,
         )
         bt.logging.info(f"Responses: {responses}")
+        
         for uid, response in zip(uids, responses):
             metadata.setdefault(uid, {})
+            
+            # Keep track of the current tier
             current_tier = self.metadata.get(uid, {}).get("tier", "unknown")
+            
+            # Update metadata fields based on response or default values
             for key, default_value in self.default_metadata_items:
-                if response:
-                    metadata[uid][key] = response.metadata.get(key, default_value)
+                if response and response.metadata.get(key) is not None:
+                    metadata[uid][key] = response.metadata[key]
                 else:
                     metadata[uid][key] = default_value
-
+            
+            # Check for tier change
             if metadata[uid]["tier"] != current_tier:
                 bt.logging.info(
                     f"Tier of uid {uid} changed from {current_tier} to {metadata[uid]['tier']}."
                 )
+                # Reset score to 0 if the tier has changed
                 metadata[uid]["score"] = 0.0
-            if "score" not in metadata[uid]:
-                metadata[uid]["score"] = 0.0
+            else:
+                # Retain existing score or initialize if missing
+                metadata[uid]["score"] = self.metadata.get(uid, {}).get("score", 0.0)
 
-        bt.logging.info(f"Metadata: {metadata}")
+        # Update self.metadata with the newly computed metadata
+        self.metadata = metadata
+        bt.logging.info(f"Metadata: {self.metadata}")
         bt.logging.success(f"Updated metadata for {len(uids)} uids.")
-        return metadata
+        return self.metadata
+
 
     def _create_serving_counter(self):
         r"""
