@@ -118,14 +118,15 @@ class ScoringService:
             model = self.models[model_name]
             tokenizer = self.tokenizers[model_name]
             outputs = []
-
+            logs = {}
             for miner_response in request.miner_responses:
                 miner_response.compressed_tokens = base64_to_ndarray(
                     miner_response.compressed_tokens_b64
                 )
 
             if "loss" in request.ground_truth_request.criterias:
-                scores = self.calculate_loss_criteria(request, model, tokenizer)
+                losses = self.calculate_loss_criteria(request, model, tokenizer)
+                logs["losses"] = losses
                 scores = self._smooth_scores(scores, delta_0=0.4, decay=0.7)
                 outputs.append(scores)
 
@@ -139,7 +140,7 @@ class ScoringService:
                 outputs.append(scores)
 
             scores = np.mean(outputs, axis=0)
-            return {"scores": scores.tolist()}
+            return {"scores": scores.tolist(), "logs": logs}
         except Exception as e:
             traceback.print_exc()
             print(f"Error in get_scoring: {e}")

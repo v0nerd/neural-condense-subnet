@@ -206,6 +206,9 @@ class Validator(ncc.BaseValidator):
                 scoring_response = scoring_response.json()
 
                 scores: list[float] = scoring_response["scores"]
+                logs: dict = scoring_response["logs"]
+                bt.logging.info(f"Scores: \n{scores}")
+                bt.logging.info(f"Logs: \n{logs}")
 
                 n_condense_tokens = [
                     len(response.compressed_tokens) for response in valid_responses

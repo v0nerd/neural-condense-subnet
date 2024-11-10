@@ -52,15 +52,17 @@ class MinerManager:
         self.load_state()
         self.sync()
 
-    def update_scores(self, scores: list[float], uids: list[int]):
+    def update_scores(self, scores: list[float], uids: list[int], logs: list[str]):
         r"""
         Updates the scores of the miners.
         """
-        for score, uid in zip(scores, uids):
+        losses = logs["losses"]
+        for score, uid, log in zip(scores, uids, losses):
             self.metadata[uid]["score"] = (
                 constants.SCORE_MOVING_AVERAGE * score
                 + (1 - constants.SCORE_MOVING_AVERAGE) * self.metadata[uid]["score"]
             )
+            self.metadata[uid]["loss"] = log
 
     def get_normalized_scores(self, eps: float = 1e-6) -> np.ndarray:
         scores = np.zeros(len(self.metagraph.hotkeys))
