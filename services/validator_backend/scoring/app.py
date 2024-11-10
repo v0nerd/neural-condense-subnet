@@ -405,11 +405,10 @@ class ScoringService:
                 max_new_tokens=max_new_tokens,
                 num_return_sequences=1,
             )
-            print(generated_outputs)
+            print(generated_outputs.shape, input_ids.shape)
+            generated_outputs = generated_outputs[:, input_ids.shape[1] :]
             completion_text = (
-                tokenizer.decode(
-                    generated_outputs[:, input_ids.shape[1] :], skip_special_tokens=True
-                )
+                tokenizer.decode(generated_outputs, skip_special_tokens=True)
                 .strip()
                 .lower()
             )
