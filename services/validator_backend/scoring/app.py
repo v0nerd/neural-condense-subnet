@@ -84,15 +84,6 @@ class ScoringService:
             num_labels=1,
         )
         self.rm_tokenizer = AutoTokenizer.from_pretrained(reward_model_name)
-        self.pipeline = TextGenerationPipeline(
-            self.rm_model,
-            self.rm_tokenizer,
-            device=self.device,
-        )
-        output_text = self.pipeline(
-            "Hello, world! Here is a story", return_full_text=False, max_new_tokens=16
-        )
-        logger.info(f"Pipeline output: {output_text}")
         self.models = {}
         self.tokenizers = {}
         self.lock = threading.Lock()
@@ -135,12 +126,11 @@ class ScoringService:
 
             if "loss" in request.ground_truth_request.criterias:
                 scores = self.calculate_loss_criteria(request, model, tokenizer)
-                scores = self._smooth_scores(scores, delta_0=0.3, decay=0.5)
+                scores = self._smooth_scores(scores, delta_0=0.4, decay=0.7)
                 outputs.append(scores)
 
             if "accuracy" in request.ground_truth_request.criterias:
                 scores = self.calculate_accuracy_criteria(request, model, tokenizer)
-                scores = self._smooth_scores(scores, delta_0=0.3, decay=0.5)
                 outputs.append(scores)
 
             if "reward_model" in request.ground_truth_request.criterias:
@@ -395,7 +385,7 @@ class ScoringService:
             print(f"Error in unit_test: {e}")
 
     def _llm_judge(
-        self, expected_completion, completion, model, tokenizer, max_new_tokens=64
+        self, expected_completion, completion, model, tokenizer, max_new_tokens=32
     ):
         """
         Generates a yes or no judgment on the accuracy of the model's completion compared to
@@ -406,8 +396,9 @@ class ScoringService:
             - Ground truth completion: {expected_completion}
             - Model completion: {completion}
             """
+            pipeline = TextGenerationPipeline(model, tokenizer, device=self.device)
             messages = [{"role": "user", "content": prompt}]
-            completion_text = self.pipeline(
+            completion_text = pipeline(
                 messages,
                 return_full_text=False,
                 max_new_tokens=max_new_tokens,

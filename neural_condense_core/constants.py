@@ -81,7 +81,7 @@ class Constants(BaseModel):
             weight=0.5,
         ),
         SyntheticTaskConfig(
-            task="conversation",
+            task="continual_conversation",
             criterias=["reward_model"],
             rewarding_frequency=1,
             weight=0.0,
