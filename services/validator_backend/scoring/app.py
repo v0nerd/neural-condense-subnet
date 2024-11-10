@@ -446,8 +446,9 @@ class ScoringService:
         decrement = delta_0
 
         for i in range(1, len(sorted_scores)):
-            diff = abs(sorted_scores[i - 1] - sorted_scores[i]) / sorted_scores[i - 1]
-            if diff < 0.05:
+            diff = abs(sorted_scores[i - 1] - sorted_scores[i])
+            # Treat for only loss criteria. TODO: Generalize for all criteria
+            if diff < 0.1:
                 smoothed_scores.append(
                     smoothed_scores[i - 1]
                 )  # If tied, assign the same smoothed score
