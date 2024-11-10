@@ -75,6 +75,8 @@ class MinerManager:
         try:
             state = json.load(open(self.state_path, "r"))
             self.metadata = state["metadata"]
+            # Convert key str to int
+            self.metadata = {int(k): v for k, v in self.metadata.items()}
             self._log_metadata()
             bt.logging.success("Loaded state.")
         except Exception as e:
@@ -160,7 +162,7 @@ class MinerManager:
         metadata = self.metadata.copy()  # Start with a copy of the current metadata
         uids = [uid for uid in range(len(self.metagraph.hotkeys))]
         axons = [self.metagraph.axons[uid] for uid in uids]
-        
+
         # Query responses from axons
         responses = self.dendrite.query(
             axons,
@@ -169,20 +171,20 @@ class MinerManager:
             timeout=16,
         )
         bt.logging.info(f"Responses: {responses}")
-        
+
         for uid, response in zip(uids, responses):
             metadata.setdefault(uid, {})
-            
+
             # Keep track of the current tier
             current_tier = self.metadata.get(uid, {}).get("tier", "unknown")
-            
+
             # Update metadata fields based on response or default values
             for key, default_value in self.default_metadata_items:
                 if response and response.metadata.get(key) is not None:
                     metadata[uid][key] = response.metadata[key]
                 else:
                     metadata[uid][key] = default_value
-            
+
             # Check for tier change
             if metadata[uid]["tier"] != current_tier:
                 bt.logging.info(
@@ -199,7 +201,6 @@ class MinerManager:
         bt.logging.info(f"Metadata: {self.metadata}")
         bt.logging.success(f"Updated metadata for {len(uids)} uids.")
         return self.metadata
-
 
     def _create_serving_counter(self):
         r"""
