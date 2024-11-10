@@ -268,6 +268,7 @@ class ScoringService:
                 logger.info(f"Reward Score: {score}")
                 rewards.append(score)
             except Exception as e:
+                traceback.print_exc()
                 print(f"Error in calculate_accuracy_criteria loop: {e}")
                 rewards.append(0)
         return rewards
@@ -316,6 +317,7 @@ class ScoringService:
                     )
                     accuracy_scores.append(accuracy)
                 except Exception as e:
+                    traceback.print_exc()
                     print(f"Error in calculate_accuracy_criteria loop: {e}")
                     accuracy_scores.append(0)
             return accuracy_scores
@@ -403,6 +405,7 @@ class ScoringService:
                 max_new_tokens=max_new_tokens,
                 num_return_sequences=1,
             )
+            print(generated_outputs)
             completion_text = (
                 tokenizer.decode(generated_outputs[0], skip_special_tokens=True)
                 .strip()
