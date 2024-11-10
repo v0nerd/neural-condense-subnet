@@ -67,10 +67,15 @@ class MinerManager:
                 self.metadata[uid]["loss"] = loss
 
     def get_normalized_scores(self, eps: float = 1e-6) -> np.ndarray:
-        scores = np.zeros(len(self.metagraph.hotkeys))
-        for uid, metadata in self.metadata.items():
-            scores[uid] = metadata["score"]
-        scores = (scores - scores.min()) / (scores.max() - scores.min() + eps)
+        weights = np.zeros(len(self.metagraph.hotkeys))
+        for tier in constants.TIER_CONFIG.keys():
+            scores = np.zeros(len(self.metagraph.hotkeys))
+            for uid, metadata in self.metadata.items():
+                scores[uid] = metadata["score"]
+            scores = (scores - scores.min()) / (scores.max() - scores.min() + eps)
+            scores = scores * constants.TIER_CONFIG[tier].incentive_percentage
+            bt.logging.info(f"Scores for tier {tier}: \n{scores}")
+            weights += scores
         return scores
 
     def load_state(self):
