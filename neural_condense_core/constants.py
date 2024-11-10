@@ -26,7 +26,7 @@ class Constants(BaseModel):
         "research": TierConfig(
             incentive_percentage=1.0,
             requests_per_epoch=256,
-            timeout=64,
+            timeout=32,
             scoring_lambda=lambda x: x["normalized_score_in_batch"]
             - 0.2 * x["process_time/timeout"]
             + 0.2 * x["compress_rate_reward"],
@@ -72,13 +72,13 @@ class Constants(BaseModel):
             task="reconstruction",
             criterias=["loss"],
             rewarding_frequency=1,
-            weight=0.5,
+            weight=0.8,
         ),
         SyntheticTaskConfig(
             task="question_answering",
             criterias=["accuracy"],
             rewarding_frequency=1,
-            weight=0.5,
+            weight=0.2,
         ),
         SyntheticTaskConfig(
             task="continual_conversation",
