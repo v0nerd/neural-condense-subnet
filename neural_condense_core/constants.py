@@ -91,7 +91,7 @@ class Constants(BaseModel):
     # Default values
     EPOCH_LENGTH: int = 600
     SCORING_PER_MINER_PER_EPOCH: int = 1
-    SUBNET_TEMPO: int = 120
+    SUBNET_TEMPO: int = 360
     MIN_STAKE: int = int(os.environ.get("MIN_STAKE", 10000))
     RPE_PERCENTAGE_FOR_SYNTHETIC: float = 0.5
     BATCH_SIZE: int = 4
