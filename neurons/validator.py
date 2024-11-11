@@ -7,6 +7,7 @@ from transformers.utils.logging import disable_propagation, disable_default_hand
 import numpy as np
 import time
 import requests
+import wandb
 
 disable_default_handler()
 disable_propagation()
@@ -29,6 +30,28 @@ class Validator(ncc.BaseValidator):
             except Exception as e:
                 bt.logging.error(f"Starting organic gate error: {e}")
             bt.logging.info("Starting organic gate.")
+
+        if self.config.validator.use_wandb:
+            try:
+                message = "incentivized-decentralzied-condensed-ai" + "-".join(
+                    random.choices("0123456789abcdef", k=16)
+                )
+                signature = f"0x{self.dendrite.keypair.sign(message).hex()}"
+                wandb.init(
+                    project="Neural-Condense-Subnet",
+                    name="validator-{}".format(self.uid),
+                    job_type="validation",
+                    group="validator",
+                    resume="allow",
+                    config={
+                        "signature": signature,
+                        "uid": self.uid,
+                        "message": message,
+                        "ss58_address": self.metagraph.hotkeys[self.uid],
+                    },
+                )
+            except Exception as e:
+                bt.logging.error(f"Starting wandb error: {e}")
 
     def forward(self):
         bt.logging.info("Running epoch.")
@@ -207,9 +230,7 @@ class Validator(ncc.BaseValidator):
                 scoring_response = scoring_response.json()
 
                 scores: list[float] = scoring_response["scores"]
-                logs: dict = scoring_response["logs"]
                 bt.logging.info(f"Scores: \n{scores}")
-                bt.logging.info(f"Logs: \n{logs}")
 
                 n_condense_tokens = [
                     len(response.compressed_tokens) for response in valid_responses
@@ -240,9 +261,29 @@ class Validator(ncc.BaseValidator):
                     f"Scores: {scores}\nFactors: {factors_list}\nPenalized scores: {penalized_scores}"
                 )
                 penalized_scores = [min(1, max(0, score)) for score in penalized_scores]
-                self.miner_manager.update_scores(penalized_scores, valid_uids, logs)
+                self.miner_manager.update_scores(penalized_scores, valid_uids)
+
+                if self.config.validator.use_wandb:
+                    logs: dict = scoring_response["logs"]
+                    self._log_wandb(logs, valid_uids, tier=tier)
         except Exception as e:
             bt.logging.error(f"Error: {e}")
+
+    def _log_wandb(self, logs: dict, uids: list[int], tier=""):
+        try:
+            for metric, values in logs.items():
+                if metric == "accuracy":
+                    # Plot table for accuracy
+                    table = wandb.Table(columns=["uid", "accuracy"])
+                    for uid, value in zip(uids, values):
+                        table.add_data(uid, value)
+                    wandb.log({f"{tier}/accuracy": table})
+
+                if metric == "losses":
+                    for uid, value in zip(uids, values):
+                        wandb.log({f"{tier}/losses/{uid}": abs(value)})
+        except Exception as e:
+            bt.logging.error(f"Error logging to wandb: {e}")
 
     def set_weights(self):
         r"""
