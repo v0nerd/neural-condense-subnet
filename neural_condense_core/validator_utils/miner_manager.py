@@ -76,7 +76,7 @@ class MinerManager:
             scores = scores * constants.TIER_CONFIG[tier].incentive_percentage
             bt.logging.info(f"Scores for tier {tier}: \n{scores}")
             weights += scores
-        return scores
+        return weights
 
     def load_state(self):
         try:
