@@ -93,20 +93,33 @@ class OrganicGate:
             bt.logging.info(f"Tier: {request.tier}")
             bt.logging.info(f"Target model: {request.target_model}")
 
+            top_incentive = request.top_incentive
+            tier_uids = list(self.miner_manager.serving_counter[request.tier].keys())
+            incentives = [self.metagraph.I[uid] for uid in tier_uids]
+            incentives = np.array(incentives)
+            incentives = incentives / incentives.sum()
+            top_uids = np.argsort(incentives)[::-1][
+                : int(top_incentive * len(incentives))
+            ]
+            top_uids = top_uids.tolist() or tier_uids
+            bt.logging.info(f"Top uids: {top_uids}, Incentives: {incentives}")
             targeted_uid = None
             if request.miner_uid != -1:
-                targeted_uid = request.miner_uid
+                counter = self.miner_manager.serving_counter[request.tier][
+                    request.miner_uid
+                ]
+                if counter.increment():
+                    targeted_uid = request.miner_uid
             else:
-                for uid, counter in self.miner_manager.serving_counter[
-                    request.tier
-                ].items():
+                for uid in top_uids:
+                    counter = self.miner_manager.serving_counter[request.tier][uid]
                     if counter.increment():
                         targeted_uid = uid
                         break
             if targeted_uid is None:
                 raise HTTPException(
                     status_code=503,
-                    detail="No miners available.",
+                    detail=f"No miners available. Top uids: {top_uids}, Incentives: {incentives}",
                 )
             target_axon = self.metagraph.axons[targeted_uid]
 
