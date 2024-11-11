@@ -3,7 +3,7 @@ import json
 import numpy as np
 from tqdm import tqdm
 from transformers import AutoTokenizer
-from neural_condense_core import Challenger
+from neural_condense_core import validator_utils
 
 
 def benchmark_challenger(
@@ -24,10 +24,10 @@ def benchmark_challenger(
     """
     # Load tokenizer and initialize Challenger instance
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    challenger = Challenger()
+    challenger = validator_utils.Challenger()
 
     # Define task types and initialize logs
-    tasks = ["question_answering", "reconstruction", "conversation"]
+    tasks = ["question_answering", "reconstruction", "continual_conversation"]
     time_logs = {task: 0 for task in tasks}
     error_count = 0
     dataset_items = []
