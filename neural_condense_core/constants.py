@@ -48,7 +48,7 @@ class Constants(BaseModel):
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
             max_condensed_tokens=1024,
             min_condensed_tokens=128,
-            max_context_length_in_chars=10000,
+            max_context_length_in_chars=15000,
         ),
         "inference_1": TierConfig(
             incentive_percentage=0.0,
@@ -63,7 +63,7 @@ class Constants(BaseModel):
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
             max_condensed_tokens=2048,
             min_condensed_tokens=128,
-            max_context_length_in_chars=15000,
+            max_context_length_in_chars=20000,
         ),
     }
 
