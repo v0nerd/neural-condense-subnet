@@ -262,7 +262,7 @@ class Validator(ncc.BaseValidator):
                 )
                 penalized_scores = [min(1, max(0, score)) for score in penalized_scores]
                 self.miner_manager.update_scores(penalized_scores, valid_uids)
-
+                logs["penalized_scores"] = penalized_scores
                 if self.config.validator.use_wandb:
                     logs: dict = scoring_response["logs"]
                     self._log_wandb(logs, valid_uids, tier=tier)
@@ -273,15 +273,14 @@ class Validator(ncc.BaseValidator):
         try:
             for metric, values in logs.items():
                 if metric == "accuracy":
-                    # Plot table for accuracy
-                    table = wandb.Table(columns=["uid", "accuracy"])
-                    for uid, value in zip(uids, values):
-                        table.add_data(uid, value)
-                    wandb.log({f"{tier}/accuracy": table})
-
+                    pass
                 if metric == "losses":
                     for uid, value in zip(uids, values):
-                        wandb.log({f"{tier}/losses/{uid}": abs(value)})
+                        wandb.log({f"{tier}-{uid}/losses": abs(value)})
+                if metric == "penalized_scores":
+                    for uid, value in zip(uids, values):
+                        wandb.log({f"{tier}-{uid}/penalized_scores": value})
+
         except Exception as e:
             bt.logging.error(f"Error logging to wandb: {e}")
 
