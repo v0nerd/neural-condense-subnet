@@ -262,9 +262,9 @@ class Validator(ncc.BaseValidator):
                 )
                 penalized_scores = [min(1, max(0, score)) for score in penalized_scores]
                 self.miner_manager.update_scores(penalized_scores, valid_uids)
-                logs["penalized_scores"] = penalized_scores
                 if self.config.validator.use_wandb:
                     logs: dict = scoring_response["logs"]
+                    logs["penalized_scores"] = penalized_scores
                     self._log_wandb(logs, valid_uids, tier=tier)
         except Exception as e:
             bt.logging.error(f"Error: {e}")
