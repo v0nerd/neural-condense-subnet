@@ -52,7 +52,7 @@ class MinerManager:
         self.load_state()
         self.sync()
 
-    def update_scores(self, scores: list[float], uids: list[int], logs: list[str]):
+    def update_scores(self, scores: list[float], uids: list[int], logs: dict = {}):
         r"""
         Updates the scores of the miners.
         """
