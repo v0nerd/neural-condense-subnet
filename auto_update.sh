@@ -27,8 +27,9 @@ update_repo() {
         # Restart PM2 services if they exist
         if pm2 list | grep -q "condense_validator"; then
             echo "Restarting validator services..."
-            pm2 restart condense_validator
             pm2 restart condense_validator_backend
+            sleep 32
+            pm2 restart condense_validator
         fi
         
         echo "Update completed successfully!"
