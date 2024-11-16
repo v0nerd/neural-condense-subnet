@@ -110,7 +110,7 @@ class Validator(ABC):
             bt.logging.debug("Started")
 
     @abstractmethod
-    def forward(self):
+    def start_epoch(self):
         pass
 
     def run(self):
@@ -120,7 +120,7 @@ class Validator(ABC):
             start_epoch = time.time()
 
             try:
-                self.forward()
+                self.start_epoch()
             except Exception as e:
                 bt.logging.error(f"Forward error: {e}")
                 traceback.print_exc()
@@ -132,7 +132,14 @@ class Validator(ABC):
             time.sleep(time_to_sleep)
 
             try:
-                self.set_weights()
+                set_weights_thread = threading.Thread(target=self.set_weights)
+                set_weights_thread.start()
+                set_weights_thread.join(timeout=constants.SET_WEIGHTS_TIMEOUT)
+
+                if set_weights_thread.is_alive():
+                    bt.logging.warning(
+                        "Set weights timeout reached, continuing to next epoch"
+                    )
             except Exception as e:
                 bt.logging.error(f"Set weights error: {e}")
                 traceback.print_exc()
