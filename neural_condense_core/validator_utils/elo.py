@@ -27,10 +27,16 @@ class ELOSystem:
         # Compare each miner against every other miner
         for i in range(n):
             for j in range(i + 1, n):
-                score_i = scores[i] + 1e-6
-                score_j = scores[j] + 1e-6
-                S_i = score_i / (score_i + score_j)
-                S_j = score_j / (score_i + score_j)
+                score_i = scores[i]
+                score_j = scores[j]
+                diff = score_i - score_j
+                if abs(diff) < 1e-3:
+                    S_i = 0.5
+                    S_j = 0.5
+                else:
+                    S_i = int(diff > 0)
+                    S_j = int(diff < 0)
+                
                 expected_i = self.expected_score(ratings[i], ratings[j])
                 expected_j = self.expected_score(ratings[j], ratings[i])
                 rating_change_i = k_factor * (S_i - expected_i)
