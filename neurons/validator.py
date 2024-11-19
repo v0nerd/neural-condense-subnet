@@ -7,6 +7,7 @@ import numpy as np
 import time
 import traceback
 from neural_condense_core.validator_utils import forward as forward_utils
+from concurrent.futures import ThreadPoolExecutor
 
 
 class Validator(ncc.base.BaseValidator):
@@ -45,6 +46,12 @@ class Validator(ncc.base.BaseValidator):
         bt.logging.info(f"Weights: {weights}")
         bt.logging.info(f"Uids: {self.metagraph.uids}")
 
+        # Add a thread pool executor
+        self.thread_pool = ThreadPoolExecutor(
+            max_workers=min(32, (threading.active_count() + 4) * 2),
+            thread_name_prefix="validator_pool"
+        )
+
     def start_epoch(self):
         """
         Main validation loop that processes miners across all tiers.
@@ -59,7 +66,10 @@ class Validator(ncc.base.BaseValidator):
         for t in threads:
             t.start()
         for t in threads:
-            t.join()
+            try:
+                t.join(timeout=ncc.constants.EPOCH_LENGTH*1.5)
+            except Exception as e:
+                bt.logging.error(f"Thread join error: {e}")
 
         try:
             self.miner_manager.report()
@@ -94,7 +104,7 @@ class Validator(ncc.base.BaseValidator):
             1,
         )
         sleep_per_set = ncc.constants.EPOCH_LENGTH / n_sets
-        query_threads = []
+        futures = []
 
         for _ in range(n_sets):
             pre_batched_uids = forward_utils.get_batched_uids(
@@ -108,17 +118,18 @@ class Validator(ncc.base.BaseValidator):
 
                 if len(batched_uids) < 2:
                     continue
-
-                thread = threading.Thread(
-                    target=self._forward_batch,
-                    args=(tier, model_name, batched_uids, tokenizer),
+                future = self.thread_pool.submit(
+                    self._forward_batch,
+                    tier,
+                    model_name,
+                    batched_uids,
+                    tokenizer
                 )
-                query_threads.append(thread)
-                thread.start()
+                futures.append(future)
                 time.sleep(sleep_per_batch)
 
-        for thread in query_threads:
-            thread.join()
+        for future in futures:
+            future.result()
 
     def _forward_batch(
         self,
