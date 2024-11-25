@@ -8,6 +8,7 @@ from ...logger import logger
 from ..synthesizing.challenge_generator import ChallengeGenerator
 from ..managing.miner_manager import MinerManager, ServingCounter, MetadataItem
 from ...constants import SyntheticTaskConfig, TierConfig
+import asyncio
 
 
 def get_task_config() -> SyntheticTaskConfig:
@@ -85,18 +86,31 @@ async def validate_responses(
     responses: list[TextCompressProtocol], uids: list[int], tier_config: TierConfig
 ) -> tuple[list[TextCompressProtocol], list[int], list[int], list[str]]:
     valid_responses, valid_uids, invalid_uids, invalid_reasons = [], [], [], []
-    for uid, response in zip(uids, responses):
+
+    # Add recursion limit protection
+    async def verify_single_response(response):
         try:
-            is_valid, reason = await TextCompressProtocol.verify(response, tier_config)
-            if is_valid:
-                valid_responses.append(response)
-                valid_uids.append(uid)
-            else:
-                invalid_uids.append(uid)
-                invalid_reasons.append(reason)
+            # Add timeout to prevent hanging
+            is_valid, reason = await asyncio.wait_for(
+                TextCompressProtocol.verify(response, tier_config), timeout=16
+            )
+            return is_valid, reason
+        except asyncio.TimeoutError:
+            return False, "Verification timeout"
+        except RecursionError:
+            return False, "Recursion limit exceeded"
         except Exception as e:
+            return False, str(e)
+
+    for uid, response in zip(uids, responses):
+        is_valid, reason = await verify_single_response(response)
+        if is_valid:
+            valid_responses.append(response)
+            valid_uids.append(uid)
+        else:
             invalid_uids.append(uid)
-            invalid_reasons.append(str(e))
+            invalid_reasons.append(reason)
+
     return valid_responses, valid_uids, invalid_uids, invalid_reasons
 
 
@@ -161,27 +175,30 @@ async def get_scoring_metrics(
     timeout: int = 120,
     config: bt.config = None,
 ) -> dict[str, list]:
-    payload = {
-        "miner_responses": [
-            {"compressed_kv_b64": r.compressed_kv_b64} for r in valid_responses
-        ],
-        "ground_truth_request": ground_truth_synapse.validator_payload
-        | {"model_name": model_name, "criterias": task_config.criterias},
-    }
+    try:
+        payload = {
+            "miner_responses": [
+                {"compressed_kv_b64": r.compressed_kv_b64} for r in valid_responses
+            ],
+            "ground_truth_request": ground_truth_synapse.validator_payload
+            | {"model_name": model_name, "criterias": task_config.criterias},
+        }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"http://{config.validator.score_backend.host}:{config.validator.score_backend.port}/get_metrics",
-            json=payload,
-            timeout=timeout,
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"http://{config.validator.score_backend.host}:{config.validator.score_backend.port}/get_metrics",
+                json=payload,
+                timeout=timeout,
+            )
+            scoring_response = response.json()
+        metrics = scoring_response["metrics"]
+        metrics["accelerate_metrics"] = [r.accelerate_score for r in valid_responses]
+        metrics = update_metrics_of_invalid_miners(
+            invalid_uids=invalid_uids,
+            metrics=metrics,
         )
-        scoring_response = response.json()
-    metrics = scoring_response["metrics"]
-    metrics["accelerate_metrics"] = [r.accelerate_score for r in valid_responses]
-    metrics = update_metrics_of_invalid_miners(
-        invalid_uids=invalid_uids,
-        metrics=metrics,
-    )
+    except Exception as e:
+        logger.warning(f"Error getting scoring metrics: {e}")
     return metrics
 
 

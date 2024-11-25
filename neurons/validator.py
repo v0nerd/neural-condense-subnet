@@ -68,11 +68,9 @@ class Validator(base.BaseValidator):
             for tier in constants.TIER_CONFIG
         ]
         try:
-            await asyncio.wait_for(
-                asyncio.gather(*tasks), timeout=constants.EPOCH_LENGTH * 1.5
-            )
-        except asyncio.TimeoutError:
-            logger.warning("Epoch tasks timed out, continuing to next epoch")
+            await asyncio.gather(*tasks, return_exceptions=True)
+        except asyncio.TimeoutError as e:
+            logger.warning(f"Epoch tasks timed out: {e}")
         except Exception as e:
             logger.error(f"Error running epoch tasks: {e}")
             traceback.print_exc()
@@ -109,7 +107,10 @@ class Validator(base.BaseValidator):
         sleep_per_set = constants.EPOCH_LENGTH / n_sets
         futures = []
 
-        for _ in range(n_sets):
+        for i in range(n_sets):
+            logger.info(
+                f"Processing set {i}/{n_sets} then sleeping for {sleep_per_set} seconds."
+            )
             pre_batched_uids = vutils.loop.get_batched_uids(
                 serving_counter, self.miner_manager.metadata
             )
@@ -127,8 +128,7 @@ class Validator(base.BaseValidator):
                 futures.append(future)
                 await asyncio.sleep(sleep_per_batch)
 
-        for future in futures:
-            future.result()
+        await asyncio.gather(*futures, return_exceptions=True)
 
     async def _forward_batch(
         self,
@@ -167,6 +167,10 @@ class Validator(base.BaseValidator):
                 synapse=synapse,
                 timeout=constants.TIER_CONFIG[tier].timeout,
             )
+
+            if not responses:
+                logger.warning(f"No responses from {batched_uids}.")
+                return
             (
                 valid_responses,
                 valid_uids,
