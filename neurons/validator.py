@@ -50,7 +50,11 @@ class Validator(base.BaseValidator):
 
         # Add a thread pool executor
         self.loop = asyncio.get_event_loop()
-        self.set_weights()
+        try:
+            self.set_weights()
+        except Exception as e:
+            logger.error(f"First try to set weights failed: {e}")
+            traceback.print_exc()
 
     async def start_epoch(self):
         """
