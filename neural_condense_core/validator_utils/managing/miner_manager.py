@@ -1,16 +1,17 @@
 import json
 import bittensor as bt
 import numpy as np
-import random
 import httpx
 import pandas as pd
 import threading
+import time
 from pydantic import BaseModel
 from .metric_converter import MetricConverter
 from .elo import ELOSystem
-from ..common import build_rate_limit
-from ..protocol import Metadata
-from ..constants import constants, TierConfig
+from ...common import build_rate_limit
+from ...protocol import Metadata
+from ...constants import constants, TierConfig
+from ...logger import logger
 
 
 class MetadataItem(BaseModel):
@@ -97,10 +98,9 @@ class MinerManager:
         self.config = validator.config
         self.metadata = self._init_metadata()
         self.state_path = self.config.full_path + "/state.json"
-        self.message = "".join(random.choices("0123456789abcdef", k=16))
         self.metric_converter = MetricConverter()
         self.rate_limit_per_tier = self.get_rate_limit_per_tier()
-        bt.logging.info(f"Rate limit per tier: {self.rate_limit_per_tier}")
+        logger.info(f"Rate limit per tier: {self.rate_limit_per_tier}")
         self.load_state()
         self.sync()
 
@@ -142,15 +142,17 @@ class MinerManager:
             )
         return final_ratings, initial_ratings
 
-    def get_normalized_ratings(self) -> np.ndarray:
+    def get_normalized_ratings(self, top_percentage: float = 1.0) -> np.ndarray:
         """
         Calculate normalized ratings for all miners based on their tier and ELO rating.
+
+        Args:
+            top_percentage (float): Percentage of miners to consider for normalization
 
         Returns:
             np.ndarray: Array of normalized ratings for all miners
         """
         weights = np.zeros(len(self.metagraph.hotkeys))
-
         for tier in constants.TIER_CONFIG.keys():
             # Get ELO ratings for miners in this tier
             tier_ratings = []
@@ -160,10 +162,31 @@ class MinerManager:
                 if metadata.tier == tier:
                     tier_ratings.append(metadata.elo_rating)
                     tier_uids.append(uid)
+            uids_ratings = list(zip(tier_uids, tier_ratings))
+            if uids_ratings:
+                # Give zeros to rating of miners not in top_percentage
+                n_top_miners = max(1, int(len(tier_ratings) * top_percentage))
+                top_miners = sorted(uids_ratings, key=lambda x: x[1], reverse=True)[
+                    :n_top_miners
+                ]
+                top_uids, _ = zip(*top_miners)
+                thresholded_ratings = tier_ratings.copy()
+                for i in range(len(tier_ratings)):
+                    if tier_uids[i] not in top_uids:
+                        thresholded_ratings[i] = 0
 
-            if tier_ratings:
+                data = {
+                    "uids": tier_uids,
+                    "original_ratings": tier_ratings,
+                    "thresholded_ratings": thresholded_ratings,
+                }
+                logger.info(
+                    f"Thresholded Ratings for Tier {tier} (thresholded by {top_percentage}) :\n{pd.DataFrame(data).to_markdown()}"
+                )
                 # Normalize ELO ratings to weights, sum to 1
-                normalized_ratings = self.elo_system.normalize_ratings(tier_ratings)
+                normalized_ratings = self.elo_system.normalize_ratings(
+                    thresholded_ratings
+                )
 
                 # Apply tier incentive percentage
                 tier_weights = (
@@ -188,9 +211,9 @@ class MinerManager:
             }
             self.metadata = metadata_items
             self._log_metadata()
-            bt.logging.success("Loaded state.")
+            logger.info("Loaded state.")
         except Exception as e:
-            bt.logging.error(f"Failed to load state: {e}")
+            logger.error(f"Failed to load state: {e}")
 
     def save_state(self):
         """
@@ -200,9 +223,9 @@ class MinerManager:
             metadata_dict = {k: v.dict() for k, v in self.metadata.items()}
             state = {"metadata": metadata_dict}
             json.dump(state, open(self.state_path, "w"))
-            bt.logging.success("Saved state.")
+            logger.info("Saved state.")
         except Exception as e:
-            bt.logging.error(f"Failed to save state: {e}")
+            logger.error(f"Failed to save state: {e}")
 
     def _init_metadata(self):
         """
@@ -218,9 +241,9 @@ class MinerManager:
         """
         Synchronize metadata and serving counters for all miners.
         """
-        bt.logging.info("Synchronizing metadata and serving counters.")
+        logger.info("Synchronizing metadata and serving counters.")
         self.rate_limit_per_tier = self.get_rate_limit_per_tier()
-        bt.logging.info(f"Rate limit per tier: {self.rate_limit_per_tier}")
+        logger.info(f"Rate limit per tier: {self.rate_limit_per_tier}")
         self.metadata = self._update_metadata()
         self.serving_counter: dict[str, dict[int, ServingCounter]] = (
             self._create_serving_counter()
@@ -239,29 +262,32 @@ class MinerManager:
         metadata_df = pd.DataFrame(metadata_dict).T
         metadata_df = metadata_df.reset_index()
         metadata_df.columns = ["uid", "tier", "elo_rating"]
-        bt.logging.info("\n" + metadata_df.to_string(index=True))
+        logger.info("Metadata:\n" + metadata_df.to_markdown())
 
-    def report(self):
+    async def report_metadata(self):
         """
         Report current miner metadata to the validator server.
         """
-        url = f"{self.config.validator.report_url}/api/report"
-        signature = f"0x{self.dendrite.keypair.sign(self.message).hex()}"
+        metadata_dict = {k: v.dict() for k, v in self.metadata.items()}
+        await self.report(metadata_dict, "api/report-metadata")
+
+    async def report(self, payload: dict, endpoint: str):
+        """
+        Report current miner metadata to the validator server.
+        """
+        url = f"{self.config.validator.report_url}/{endpoint}"
+        nonce = str(time.time_ns())
+        signature = f"0x{self.dendrite.keypair.sign(nonce).hex()}"
 
         headers = {
             "Content-Type": "application/json",
-            "message": self.message,
+            "message": nonce,
             "ss58_address": self.wallet.hotkey.ss58_address,
             "signature": signature,
         }
 
-        metadata_dict = {k: v.dict() for k, v in self.metadata.items()}
-        payload = {
-            "metadata": metadata_dict,
-        }
-
-        with httpx.Client() as client:
-            response = client.post(
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
                 url,
                 json=payload,
                 headers=headers,
@@ -269,11 +295,11 @@ class MinerManager:
             )
 
         if response.status_code != 200:
-            bt.logging.error(
-                f"Failed to report metadata to the Validator Server. Response: {response.text}"
+            logger.error(
+                f"Failed to report to the {endpoint}. Response: {response.text}"
             )
         else:
-            bt.logging.success("Reported metadata to the Validator Server.")
+            logger.info(f"Reported to the {endpoint}.")
 
     def _update_metadata(self):
         """
@@ -315,7 +341,7 @@ class MinerManager:
 
             # Reset ELO rating if tier changed
             if new_tier != current_tier:
-                bt.logging.info(
+                logger.info(
                     f"Tier of uid {uid} changed from {current_tier} to {new_tier}."
                 )
                 current_elo = constants.INITIAL_ELO_RATING
@@ -324,9 +350,9 @@ class MinerManager:
 
         # Update self.metadata with the newly computed metadata
         self.metadata = metadata
-        bt.logging.success(f"Updated metadata for {len(uids)} uids.")
+        logger.info(f"Updated metadata for {len(uids)} uids.")
         return self.metadata
-    
+
     def get_rate_limit_per_tier(self):
         """
         Get rate limit per tier for the validator.

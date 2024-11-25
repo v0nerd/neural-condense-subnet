@@ -1,4 +1,5 @@
-import bittensor as bt
+import pandas as pd
+from ..logger import logger
 from ..constants import constants
 
 
@@ -8,7 +9,6 @@ def build_rate_limit(metagraph, config, tier=None):
         whitelist_uids = [int(uid) for uid in config.whitelist_uids.split(",")]
     else:
         whitelist_uids = [i for i in range(len(S)) if S[i] > constants.MIN_STAKE]
-    bt.logging.info(f"Whitelist uids: {whitelist_uids}")
 
     selected_tier_config = constants.TIER_CONFIG[tier or config.miner.tier]
     rpe = selected_tier_config.requests_per_epoch
@@ -27,5 +27,11 @@ def build_rate_limit(metagraph, config, tier=None):
         if uid not in whitelist_uids:
             rate_limits[uid] = 0
 
-    bt.logging.debug(f"Rate limits: {rate_limits}")
+    _df = pd.DataFrame(
+        {
+            "uids": whitelist_uids,
+            "rate_limits": [rate_limits[uid] for uid in whitelist_uids],
+        }
+    )
+    logger.info(f"Rate limits for tier {tier}:\n{_df.to_markdown()}")
     return rate_limits

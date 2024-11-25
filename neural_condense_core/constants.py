@@ -63,22 +63,28 @@ class Constants(BaseModel):
 
     SYNTHETIC_TASK_CONFIG: List[SyntheticTaskConfig] = [
         SyntheticTaskConfig(
-            task="reconstruction",
-            criterias=["loss"],
+            task="causal_conversation",
+            criterias=["perplexity"],
             rewarding_frequency=1,
-            weight=0.8,
+            weight=1,
         ),
         SyntheticTaskConfig(
             task="question_answering",
-            criterias=["accuracy"],
+            criterias=["perplexity"],
             rewarding_frequency=1,
-            weight=0.2,
+            weight=1,
         ),
         SyntheticTaskConfig(
-            task="continual_conversation",
-            criterias=["reward_model"],
+            task="reconstruct_conversation",
+            criterias=["perplexity"],
             rewarding_frequency=1,
-            weight=0.0,
+            weight=1,
+        ),
+        SyntheticTaskConfig(
+            task="trivial_qa_conversation",
+            criterias=["perplexity"],
+            rewarding_frequency=1,
+            weight=1,
         ),
     ]
 
@@ -89,7 +95,7 @@ class Constants(BaseModel):
     MIN_STAKE: int = int(os.environ.get("MIN_STAKE", 10000))
     RPE_PERCENTAGE_FOR_SYNTHETIC: float = 0.05
     BATCH_SIZE: int = 4
-    SET_WEIGHTS_TIMEOUT: int = 60
+    SET_WEIGHTS_TIMEOUT: int = 120
     ORGANIC_CLIENT_URL: str = "https://ncs-client.condenses.ai"
     REPORT_URL: str = "https://report.condenses.ai"
     INITIAL_ELO_RATING: float = 100.0
@@ -99,6 +105,8 @@ class Constants(BaseModel):
         "intermediate": EloGroup(min_elo=800, max_elo=1600, k_factor=16),
         "advanced": EloGroup(min_elo=1600, max_elo=3000, k_factor=4),
     }
+    ORGANIC_VERIFY_FREQUENCY: float = 0.1
+    TOP_PERCENTAGE_FOR_ALLOCATING_WEIGHTS: float = 0.3
 
     # Adjust values based on NETWORK environment variable
     def __init__(self, **data):
@@ -112,6 +120,9 @@ class Constants(BaseModel):
             self.MIN_STAKE = int(os.getenv("MIN_STAKE", 0))
             self.ORGANIC_CLIENT_URL = os.getenv(
                 "ORGANIC_CLIENT_URL", "https://testnet-ncs-client.condenses.ai"
+            )
+            self.REPORT_URL = os.getenv(
+                "REPORT_URL", "https://testnet-report.condenses.ai"
             )
 
 
