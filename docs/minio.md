@@ -30,8 +30,8 @@ These details will be essential for configuring the miner.
    Follow the setup instructions here: [Deploy MinIO on a Single Node](https://min.io/docs/minio/linux/operations/install-deploy-manage/deploy-minio-single-node-single-drive.html).  
    Ensure the MinIO server port is exposed publicly by including `--address 0.0.0.0:$open_port`.
 
-   - If running MinIO on the same machine, set `MINIO_SERVER` to `localhost:<open_port>`.  
-   - If hosted on a remote machine, use `<remote_machine_ip>:<open_port>`.
+   - If running MinIO on the same machine, set `MINIO_SERVER` to `http://localhost:<open_port>`.  
+   - If hosted on a remote machine, use `http://<remote_machine_ip>:<open_port>`.
 
 2. **Create a bucket**  
    Name the bucket `condense_miner` and configure it to be public.

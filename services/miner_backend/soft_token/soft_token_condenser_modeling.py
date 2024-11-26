@@ -135,4 +135,4 @@ class Condenser(nn.Module):
             output.hidden_states[-self.n_last_hidden_states :], dim=-1
         )[:, -self.num_condense_tokens :, :]
 
-        return self.linear(self.norm(hidden_states)).to(torch.float32)
+        return self.linear(self.norm(hidden_states))
