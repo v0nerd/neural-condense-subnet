@@ -26,6 +26,12 @@ update_repo() {
         
         pm2 restart condense_validator_backend
         pm2 restart condense_validator
+
+        # check if condense_validator is errored, if yes, restart
+        if [ "$(pm2 jlist | jq '.[] | select(.name=="condense_validator") | .pm2_env.status' -r)" == "errored" ]; then
+            echo "condense_validator is in error state, restarting..."
+            pm2 restart condense_validator
+        fi
         
         echo "Update completed successfully!"
     else
