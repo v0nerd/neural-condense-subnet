@@ -64,7 +64,7 @@ class Validator(base.BaseValidator):
         Syncs miner state and runs validation in parallel threads.
         """
         logger.info("Running epoch.")
-        self.miner_manager.sync()
+        await self.miner_manager.sync()
         tasks = [
             self.loop.create_task(self._forward_tier(tier))
             for tier in constants.TIER_CONFIG
@@ -167,7 +167,7 @@ class Validator(base.BaseValidator):
                 return
             synapse = ground_truth_synapse.miner_synapse
             k_factor = vutils.loop.get_k_factor(self.miner_manager, batched_uids)
-            responses = vutils.loop.query_miners(
+            responses = await vutils.loop.query_miners(
                 dendrite=dendrite,
                 metagraph=self.metagraph,
                 uids=batched_uids,
