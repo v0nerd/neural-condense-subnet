@@ -12,6 +12,8 @@ from transformers import AutoTokenizer
 import numpy as np
 import traceback
 import asyncio
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+import time
 
 
 class Validator(base.BaseValidator):
@@ -149,13 +151,18 @@ class Validator(base.BaseValidator):
         try:
             dendrite = bt.dendrite(self.wallet)
             task_config = vutils.loop.get_task_config()
-            ground_truth_synapse = await vutils.loop.prepare_synapse(
-                challenge_generator=self.challenge_generator,
-                tokenizer=tokenizer,
-                task_config=task_config,
-                tier_config=constants.TIER_CONFIG[tier],
-                model_name=model_name,
-            )
+            try:
+                ground_truth_synapse = await vutils.loop.prepare_synapse(
+                    challenge_generator=self.challenge_generator,
+                    tokenizer=tokenizer,
+                    task_config=task_config,
+                    tier_config=constants.TIER_CONFIG[tier],
+                    model_name=model_name,
+                )
+            except Exception as e:
+                logger.error(f"Error preparing synapse: {e}")
+                traceback.print_exc()
+                return
             if not ground_truth_synapse:
                 return
             synapse = ground_truth_synapse.miner_synapse
@@ -171,31 +178,40 @@ class Validator(base.BaseValidator):
             if not responses:
                 logger.warning(f"No responses from {batched_uids}.")
                 return
-            (
-                valid_responses,
-                valid_uids,
-                invalid_uids,
-                invalid_reasons,
-            ) = await vutils.loop.validate_responses(
-                responses=responses,
-                uids=batched_uids,
-                tier_config=constants.TIER_CONFIG[tier],
-            )
-            metrics, total_uids = await vutils.loop.process_and_score_responses(
-                miner_manager=self.miner_manager,
-                valid_responses=valid_responses,
-                valid_uids=valid_uids,
-                invalid_uids=invalid_uids,
-                ground_truth_synapse=ground_truth_synapse,
-                model_name=model_name,
-                task_config=task_config,
-                tier_config=constants.TIER_CONFIG[tier],
-                tier=tier,
-                k_factor=k_factor,
-                use_wandb=self.config.validator.use_wandb,
-                config=self.config,
-                invalid_reasons=invalid_reasons,
-            )
+            try:
+                (
+                    valid_responses,
+                    valid_uids,
+                    invalid_uids,
+                    invalid_reasons,
+                ) = await vutils.loop.validate_responses(
+                    responses=responses,
+                    uids=batched_uids,
+                    tier_config=constants.TIER_CONFIG[tier],
+                )
+            except Exception as e:
+                logger.error(f"Error validating responses: {e}")
+                traceback.print_exc()
+                return
+            try:
+                metrics, total_uids = await vutils.loop.process_and_score_responses(
+                    miner_manager=self.miner_manager,
+                    valid_responses=valid_responses,
+                    valid_uids=valid_uids,
+                    invalid_uids=invalid_uids,
+                    ground_truth_synapse=ground_truth_synapse,
+                    model_name=model_name,
+                    task_config=task_config,
+                    tier_config=constants.TIER_CONFIG[tier],
+                    tier=tier,
+                    k_factor=k_factor,
+                    use_wandb=self.config.validator.use_wandb,
+                    config=self.config,
+                    invalid_reasons=invalid_reasons,
+                )
+            except Exception as e:
+                logger.error(f"Error processing and scoring responses: {e}")
+                return
 
             batch_information = (
                 f"Batch Metrics - {tier} - {model_name} - {task_config.task}"
@@ -237,16 +253,31 @@ class Validator(base.BaseValidator):
         logger.info(f"Weight info:\n{weight_info_df.to_markdown()}")
         if self.current_block > self.last_update + constants.SUBNET_TEMPO:
             logger.info("Actually trying to set weights.")
-            result = self.subtensor.set_weights(
-                netuid=self.config.netuid,
-                wallet=self.wallet,
-                uids=self.metagraph.uids,
-                weights=weights,
-                wait_for_inclusion=True,
-                version_key=__spec_version__,
-            )
-            logger.info(f"Set weights result: {result}")
-            self.resync_metagraph()
+
+            # Use ThreadPoolExecutor to add timeout capability
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                try:
+                    # Submit the task to the executor with a timeout
+                    future = executor.submit(
+                        self.subtensor.set_weights,
+                        netuid=self.config.netuid,
+                        wallet=self.wallet,
+                        uids=self.metagraph.uids,
+                        weights=weights,
+                        wait_for_inclusion=True,
+                        version_key=__spec_version__,
+                    )
+
+                    # Wait for the result with a timeout
+                    result = future.result(timeout=120)  # 2 minute timeout
+                    logger.info(f"Set weights result: {result}")
+                    self.resync_metagraph()
+
+                except TimeoutError:
+                    logger.error("Setting weights timed out after 2 minutes")
+                except Exception as e:
+                    logger.error(f"Failed to set weights: {e}")
+                    traceback.print_exc()
         else:
             logger.info(
                 f"Not setting weights because current block {self.current_block} is not greater than last update {self.last_update} + tempo {constants.SUBNET_TEMPO}"
