@@ -102,8 +102,13 @@ async def validate_responses(
         except Exception as e:
             return False, str(e)
 
-    for uid, response in zip(uids, responses):
-        is_valid, reason = await verify_single_response(response)
+    # Create tasks for all responses in parallel
+    tasks = [verify_single_response(response) for response in responses]
+    # Wait for all verifications to complete
+    results = await asyncio.gather(*tasks)
+
+    # Process results maintaining order
+    for uid, (is_valid, reason), response in zip(uids, results, responses):
         if is_valid:
             valid_responses.append(response)
             valid_uids.append(uid)
@@ -140,7 +145,10 @@ async def process_and_score_responses(
         config=config,
     )
     total_uids = valid_uids + invalid_uids
-    final_ratings, initial_ratings = miner_manager.update_ratings(
+
+    # Use run_in_threadpool instead of run_in_executor
+    final_ratings, initial_ratings = await asyncio.to_thread(
+        miner_manager.update_ratings,
         metrics=metrics,
         total_uids=total_uids,
         k_factor=k_factor,
@@ -175,14 +183,17 @@ async def get_scoring_metrics(
     timeout: int = 240,
     config: bt.config = None,
 ) -> dict[str, list]:
-    payload = {
-        "miner_responses": [
-            {"compressed_kv_b64": r.compressed_kv_b64} for r in valid_responses
-        ],
-        "ground_truth_request": ground_truth_synapse.validator_payload
-        | {"model_name": model_name, "criterias": task_config.criterias},
-    }
-
+    # Move the payload creation to an executor
+    payload = await asyncio.to_thread(
+        lambda: {
+            "miner_responses": [
+                {"compressed_kv_b64": r.compressed_kv_b64} for r in valid_responses
+            ],
+            "ground_truth_request": ground_truth_synapse.validator_payload
+            | {"model_name": model_name, "criterias": task_config.criterias},
+        }
+    )
+    logger.info(f"Sending payload to scoring backend")
     async with httpx.AsyncClient() as client:
         response = await client.post(
             f"http://{config.validator.score_backend.host}:{config.validator.score_backend.port}/get_metrics",
@@ -194,11 +205,18 @@ async def get_scoring_metrics(
                 f"Scoring backend returned status code {response.status_code}"
             )
         scoring_response = response.json()
+
     metrics = scoring_response["metrics"]
-    metrics["accelerate_metrics"] = [r.accelerate_score for r in valid_responses]
-    metrics = update_metrics_of_invalid_miners(
-        invalid_uids=invalid_uids,
-        metrics=metrics,
+    # Move the accelerate_metrics calculation to an executor as well
+    metrics["accelerate_metrics"] = await asyncio.to_thread(
+        lambda: [r.accelerate_score for r in valid_responses]
+    )
+
+    # If update_metrics_of_invalid_miners is CPU-intensive, move it to executor too
+    metrics = await asyncio.to_thread(
+        update_metrics_of_invalid_miners,
+        invalid_uids,
+        metrics,
     )
     return metrics
 
@@ -244,7 +262,8 @@ def get_batched_uids(
 ) -> list[list[int]]:
     uids = list(serving_counter.keys())
     uids = sorted(uids, key=lambda uid: metadata[uid].elo_rating, reverse=True)
-    group_size = max(2, len(uids) // 4)
+    n_folds = random.choice([2, 3, 4])
+    group_size = max(2, len(uids) // n_folds)
     groups = [uids[i : i + group_size] for i in range(0, len(uids), group_size)]
     for group in groups:
         random.shuffle(group)

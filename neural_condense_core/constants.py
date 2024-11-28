@@ -107,6 +107,8 @@ class Constants(BaseModel):
     }
     ORGANIC_VERIFY_FREQUENCY: float = 0.1
     TOP_PERCENTAGE_FOR_ALLOCATING_WEIGHTS: float = 0.3
+    EXPECTED_MEAN_ELO_RATING: float = 1000
+    EXPECTED_MAX_STD_ELO_RATING: float = 300
 
     # Adjust values based on NETWORK environment variable
     def __init__(self, **data):

@@ -50,14 +50,6 @@ class Validator(base.BaseValidator):
         if self.config.validator.use_wandb:
             vutils.loop.initialize_wandb(self.dendrite, self.metagraph, self.uid)
 
-        # Add a thread pool executor
-        self.loop = asyncio.get_event_loop()
-        try:
-            self.set_weights()
-        except Exception as e:
-            logger.error(f"First try to set weights failed: {e}")
-            traceback.print_exc()
-
     async def start_epoch(self):
         """
         Main validation loop that processes miners across all tiers.
@@ -194,6 +186,8 @@ class Validator(base.BaseValidator):
                 traceback.print_exc()
                 return
             try:
+                logger.info("Processing and scoring responses.")
+                start_time = time.time()
                 metrics, total_uids = await vutils.loop.process_and_score_responses(
                     miner_manager=self.miner_manager,
                     valid_responses=valid_responses,
@@ -208,6 +202,10 @@ class Validator(base.BaseValidator):
                     use_wandb=self.config.validator.use_wandb,
                     config=self.config,
                     invalid_reasons=invalid_reasons,
+                )
+                end_time = time.time()
+                logger.info(
+                    f"Time taken to process and score responses: {end_time - start_time:.2f} seconds"
                 )
             except Exception as e:
                 logger.error(f"Error processing and scoring responses: {e}")
@@ -248,10 +246,10 @@ class Validator(base.BaseValidator):
         if np.all(weights == 0):
             weights = np.ones(len(self.metagraph.uids))
             logger.info("All weights are zero, setting to ones.")
-        weight_info = list(zip(self.metagraph.uids, weights))
-        weight_info_df = pd.DataFrame(weight_info, columns=["uid", "weight"])
-        logger.info(f"Weight info:\n{weight_info_df.to_markdown()}")
         if self.current_block > self.last_update + constants.SUBNET_TEMPO:
+            weight_info = list(zip(self.metagraph.uids, weights))
+            weight_info_df = pd.DataFrame(weight_info, columns=["uid", "weight"])
+            logger.info(f"Weight info:\n{weight_info_df.to_markdown()}")
             logger.info("Actually trying to set weights.")
 
             # Use ThreadPoolExecutor to add timeout capability
@@ -285,5 +283,7 @@ class Validator(base.BaseValidator):
 
 
 if __name__ == "__main__":
-    validator = Validator()
-    asyncio.run(validator.run())
+    with Validator() as validator:
+        while True:
+            logger.info("validator_status", object=validator)
+            time.sleep(60)

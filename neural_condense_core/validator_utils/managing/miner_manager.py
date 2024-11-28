@@ -177,6 +177,35 @@ class MinerManager:
                     if tier_uids[i] not in top_uids:
                         thresholded_ratings[i] = 0
 
+                thresholded_ratings = np.array(thresholded_ratings)
+
+                # Adjust ratings to match expected mean and standard deviation
+                nonzero_mask = thresholded_ratings > 0
+                if np.any(nonzero_mask):
+                    current_std = np.std(thresholded_ratings[nonzero_mask])
+                    current_mean = np.mean(thresholded_ratings[nonzero_mask])
+
+                    if current_std > 0:
+                        # Scale to match expected std dev
+                        target_std = constants.EXPECTED_MAX_STD_ELO_RATING
+                        scale_factor = target_std / current_std
+
+                        # Center, scale, and shift to expected mean
+                        thresholded_ratings[nonzero_mask] = (
+                            thresholded_ratings[nonzero_mask] - current_mean
+                        ) * scale_factor + constants.EXPECTED_MEAN_ELO_RATING
+                        thresholded_ratings[
+                            thresholded_ratings < constants.FLOOR_ELO_RATING
+                        ] = constants.FLOOR_ELO_RATING
+
+                        logger.info(
+                            "adjust_ratings",
+                            tier=tier,
+                            mean=current_mean,
+                            std=current_std,
+                            scale_factor=scale_factor,
+                        )
+
                 data = {
                     "uids": tier_uids,
                     "original_ratings": tier_ratings,

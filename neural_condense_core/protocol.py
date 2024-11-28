@@ -3,6 +3,7 @@ from bittensor import Synapse
 from typing import Any
 import torch
 from transformers import DynamicCache
+from starlette.concurrency import run_in_threadpool
 import time
 from .common.base64 import ndarray_to_base64
 from .common.file import load_npy_from_url
@@ -62,7 +63,8 @@ class TextCompressProtocol(Synapse):
         compressed_kv, error = await load_npy_from_url(response.compressed_kv_url)
         response.download_time = time.time() - start_time
         try:
-            kv_cache = DynamicCache.from_legacy_cache(torch.from_numpy(compressed_kv))
+            tensor = await run_in_threadpool(torch.from_numpy, compressed_kv)
+            kv_cache = await run_in_threadpool(DynamicCache.from_legacy_cache, tensor)
         except Exception as e:
             return False, f"{error} -> {str(e)}"
 
