@@ -9,6 +9,7 @@ from ..synthesizing.challenge_generator import ChallengeGenerator
 from ..managing.miner_manager import MinerManager, ServingCounter, MetadataItem
 from ...constants import SyntheticTaskConfig, TierConfig
 import asyncio
+import os
 
 
 def get_task_config() -> SyntheticTaskConfig:
@@ -92,7 +93,7 @@ async def validate_responses(
         try:
             # Add timeout to prevent hanging
             is_valid, reason = await asyncio.wait_for(
-                TextCompressProtocol.verify(response, tier_config), timeout=16
+                TextCompressProtocol.verify(response, tier_config), timeout=256
             )
             return is_valid, reason
         except asyncio.TimeoutError:
@@ -147,8 +148,7 @@ async def process_and_score_responses(
     total_uids = valid_uids + invalid_uids
 
     # Use run_in_threadpool instead of run_in_executor
-    final_ratings, initial_ratings = await asyncio.to_thread(
-        miner_manager.update_ratings,
+    final_ratings, initial_ratings = miner_manager.update_ratings(
         metrics=metrics,
         total_uids=total_uids,
         k_factor=k_factor,
@@ -184,22 +184,27 @@ async def get_scoring_metrics(
     config: bt.config = None,
 ) -> dict[str, list]:
     # Move the payload creation to an executor
-    payload = await asyncio.to_thread(
-        lambda: {
-            "miner_responses": [
-                {"compressed_kv_b64": r.compressed_kv_b64} for r in valid_responses
-            ],
-            "ground_truth_request": ground_truth_synapse.validator_payload
-            | {"model_name": model_name, "criterias": task_config.criterias},
-        }
-    )
+    payload = {
+        "miner_responses": [{"filename": r.local_filename} for r in valid_responses],
+        "ground_truth_request": ground_truth_synapse.validator_payload
+        | {"model_name": model_name, "criterias": task_config.criterias},
+    }
     logger.info(f"Sending payload to scoring backend")
     async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"http://{config.validator.score_backend.host}:{config.validator.score_backend.port}/get_metrics",
-            json=payload,
-            timeout=timeout,
-        )
+        try:
+            response = await client.post(
+                f"http://{config.validator.score_backend.host}:{config.validator.score_backend.port}/get_metrics",
+                json=payload,
+                timeout=timeout,
+            )
+        except Exception as e:
+            logger.error(f"Error sending payload to scoring backend: {e}")
+        for r in valid_responses:
+            try:
+                os.remove(r.local_filename)
+            except Exception as e:
+                logger.error(f"Error removing local file {r.local_filename}: {e}")
+        logger.info("Removed all local files")
         if response.status_code != 200:
             raise Exception(
                 f"Scoring backend returned status code {response.status_code}"
@@ -208,16 +213,10 @@ async def get_scoring_metrics(
 
     metrics = scoring_response["metrics"]
     # Move the accelerate_metrics calculation to an executor as well
-    metrics["accelerate_metrics"] = await asyncio.to_thread(
-        lambda: [r.accelerate_score for r in valid_responses]
-    )
+    metrics["accelerate_metrics"] = [r.accelerate_score for r in valid_responses]
 
     # If update_metrics_of_invalid_miners is CPU-intensive, move it to executor too
-    metrics = await asyncio.to_thread(
-        update_metrics_of_invalid_miners,
-        invalid_uids,
-        metrics,
-    )
+    metrics = update_metrics_of_invalid_miners(invalid_uids, metrics)
     return metrics
 
 

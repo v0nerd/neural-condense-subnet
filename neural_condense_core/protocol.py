@@ -3,7 +3,6 @@ from bittensor import Synapse
 from typing import Any
 import torch
 from transformers import DynamicCache
-from starlette.concurrency import run_in_threadpool
 import time
 from .common.base64 import ndarray_to_base64
 from .common.file import load_npy_from_url
@@ -23,6 +22,7 @@ class TextCompressProtocol(Synapse):
     expected_completion: str = ""
     activation_prompt: str = ""
     target_model: str = ""
+    local_filename: str = ""
     download_time: float = 0.0
     bonus_compress_size: float = 0.0
 
@@ -59,12 +59,14 @@ class TextCompressProtocol(Synapse):
         if not re.match(r"^https?://.*\.npy$", response.compressed_kv_url):
             return False, "Compressed KV URL must use HTTP or HTTPS."
 
-        start_time = time.time()
-        compressed_kv, error = await load_npy_from_url(response.compressed_kv_url)
-        response.download_time = time.time() - start_time
+        compressed_kv, filename, download_time, error = await load_npy_from_url(
+            response.compressed_kv_url
+        )
+        response.download_time = download_time
+        response.local_filename = filename
         try:
-            tensor = await run_in_threadpool(torch.from_numpy, compressed_kv)
-            kv_cache = await run_in_threadpool(DynamicCache.from_legacy_cache, tensor)
+            tensor = torch.from_numpy(compressed_kv)
+            kv_cache = DynamicCache.from_legacy_cache(tensor)
         except Exception as e:
             return False, f"{error} -> {str(e)}"
 
@@ -78,7 +80,7 @@ class TextCompressProtocol(Synapse):
         response.bonus_compress_size = 1 - (
             kv_cache._seen_tokens / tier_config.max_condensed_tokens
         )
-
-        response.compressed_kv_b64 = ndarray_to_base64(compressed_kv)
-        response.compressed_length = compressed_kv[0][0].shape[2]
+        response.compressed_length = kv_cache._seen_tokens
+        del kv_cache
+        del compressed_kv
         return True, ""

@@ -129,7 +129,9 @@ class Validator(ABC):
     def set_weights_in_background(self):
         while not self.should_exit:
             try:
+                logger.info("Set weights started.")
                 self.set_weights()
+                logger.info("Set weights finished.")
             except Exception as e:
                 logger.error(f"Set weights error: {e}")
                 traceback.print_exc()

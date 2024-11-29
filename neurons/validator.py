@@ -50,6 +50,8 @@ class Validator(base.BaseValidator):
         if self.config.validator.use_wandb:
             vutils.loop.initialize_wandb(self.dendrite, self.metagraph, self.uid)
 
+        self.set_weights_executor = ThreadPoolExecutor(max_workers=1)
+
     async def start_epoch(self):
         """
         Main validation loop that processes miners across all tiers.
@@ -251,31 +253,28 @@ class Validator(base.BaseValidator):
             weight_info_df = pd.DataFrame(weight_info, columns=["uid", "weight"])
             logger.info(f"Weight info:\n{weight_info_df.to_markdown()}")
             logger.info("Actually trying to set weights.")
+            try:
+                # result = self.subtensor.set_weights(
+                #     netuid=self.config.netuid,
+                #     wallet=self.wallet,
+                #     uids=self.metagraph.uids,
+                #     weights=weights,
+                #     wait_for_inclusion=True,
+                #     version_key=__spec_version__,
+                # )
+                future = self.set_weights_executor.submit(
+                    self.subtensor.set_weights,
+                    netuid=self.config.netuid,
+                    wallet=self.wallet,
+                    uids=self.metagraph.uids,
+                    weights=weights,
+                )
+                result = future.result(timeout=120)
+            except Exception as e:
+                logger.error(f"Failed to set weights: {e}")
+                traceback.print_exc()
 
-            # Use ThreadPoolExecutor to add timeout capability
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                try:
-                    # Submit the task to the executor with a timeout
-                    future = executor.submit(
-                        self.subtensor.set_weights,
-                        netuid=self.config.netuid,
-                        wallet=self.wallet,
-                        uids=self.metagraph.uids,
-                        weights=weights,
-                        wait_for_inclusion=True,
-                        version_key=__spec_version__,
-                    )
-
-                    # Wait for the result with a timeout
-                    result = future.result(timeout=120)  # 2 minute timeout
-                    logger.info(f"Set weights result: {result}")
-                    self.resync_metagraph()
-
-                except TimeoutError:
-                    logger.error("Setting weights timed out after 2 minutes")
-                except Exception as e:
-                    logger.error(f"Failed to set weights: {e}")
-                    traceback.print_exc()
+            logger.info(f"Set weights result: {result}")
         else:
             logger.info(
                 f"Not setting weights because current block {self.current_block} is not greater than last update {self.last_update} + tempo {constants.SUBNET_TEMPO}"
@@ -286,4 +285,7 @@ if __name__ == "__main__":
     with Validator() as validator:
         while True:
             logger.info("validator_status", object=validator)
+            if not validator.thread_set_weights.is_alive():
+                logger.info("Starting set weights thread.")
+                validator.thread_set_weights.start()
             time.sleep(60)

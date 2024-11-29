@@ -6,11 +6,11 @@ import base64
 
 
 class MinerResponse(BaseModel):
-    compressed_kv_b64: str
+    filename: str
     compressed_kv: Any = None
 
     def decode(self):
-        self.compressed_kv = base64_to_ndarray(self.compressed_kv_b64)
+        self.compressed_kv = load_npy_from_filename(self.filename)
 
 
 class GroundTruthRequest(BaseModel):
@@ -24,6 +24,12 @@ class GroundTruthRequest(BaseModel):
 class BatchedScoringRequest(BaseModel):
     miner_responses: List[MinerResponse]
     ground_truth_request: GroundTruthRequest
+
+
+def load_npy_from_filename(filename: str) -> np.ndarray:
+    with open(filename, "rb") as f:
+        buffer = io.BytesIO(f.read())
+        return np.load(buffer).astype(np.float32)
 
 
 def base64_to_ndarray(base64_str: str) -> np.ndarray:
