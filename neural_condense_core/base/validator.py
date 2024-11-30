@@ -135,10 +135,22 @@ class Validator(ABC):
             except Exception as e:
                 logger.error(f"Set weights error: {e}")
                 traceback.print_exc()
-            time.sleep(constants.SUBNET_TEMPO)
+            time.sleep(60)
 
     def resync_metagraph(self):
         self.metagraph.sync()
+
+    def watchdog_set_weights(self):
+        """Monitors and restarts the set_weights thread if it dies"""
+        while not self.should_exit:
+            logger.info("Watchdog set weights started.")
+            if not self.thread_set_weights.is_alive():
+                logger.warning("Set weights thread died, restarting...")
+                self.thread_set_weights = threading.Thread(
+                    target=self.set_weights_in_background, daemon=True
+                )
+                self.thread_set_weights.start()
+            time.sleep(600)  # Check every 10 minutes
 
     def run_in_background_thread(self):
         """
@@ -154,6 +166,11 @@ class Validator(ABC):
                 target=self.set_weights_in_background, daemon=True
             )
             self.thread_set_weights.start()
+            # Add watchdog thread
+            self.thread_watchdog = threading.Thread(
+                target=self.watchdog_set_weights, daemon=True
+            )
+            self.thread_watchdog.start()
             self.is_running = True
             logger.debug("Started")
 
@@ -179,5 +196,6 @@ class Validator(ABC):
             self.should_exit = True
             self.thread.join(5)
             self.thread_set_weights.join(5)
+            self.thread_watchdog.join(5)  # Add watchdog thread join
             self.is_running = False
             logger.debug("Stopped")

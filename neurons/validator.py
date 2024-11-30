@@ -245,29 +245,34 @@ class Validator(base.BaseValidator):
         weights = self.miner_manager.get_normalized_ratings(
             top_percentage=constants.TOP_PERCENTAGE_FOR_ALLOCATING_WEIGHTS
         )
-        if np.all(weights == 0):
-            weights = np.ones(len(self.metagraph.uids))
-            logger.info("All weights are zero, setting to ones.")
+        (
+            processed_weight_uids,
+            processed_weights,
+        ) = bt.utils.weight_utils.process_weights_for_netuid(
+            uids=self.metagraph.uids,
+            weights=weights,
+            netuid=self.config.netuid,
+            subtensor=self.subtensor,
+            metagraph=self.metagraph,
+        )
+        (
+            uint_uids,
+            uint_weights,
+        ) = bt.utils.weight_utils.convert_weights_and_uids_for_emit(
+            uids=processed_weight_uids, weights=processed_weights
+        )
+        weight_info = list(zip(uint_uids, uint_weights))
+        weight_info_df = pd.DataFrame(weight_info, columns=["uid", "weight"])
+        logger.info(f"Weight info:\n{weight_info_df.to_markdown()}")
         if self.current_block > self.last_update + constants.SUBNET_TEMPO:
-            weight_info = list(zip(self.metagraph.uids, weights))
-            weight_info_df = pd.DataFrame(weight_info, columns=["uid", "weight"])
-            logger.info(f"Weight info:\n{weight_info_df.to_markdown()}")
             logger.info("Actually trying to set weights.")
             try:
-                # result = self.subtensor.set_weights(
-                #     netuid=self.config.netuid,
-                #     wallet=self.wallet,
-                #     uids=self.metagraph.uids,
-                #     weights=weights,
-                #     wait_for_inclusion=True,
-                #     version_key=__spec_version__,
-                # )
                 future = self.set_weights_executor.submit(
                     self.subtensor.set_weights,
                     netuid=self.config.netuid,
                     wallet=self.wallet,
-                    uids=self.metagraph.uids,
-                    weights=weights,
+                    uids=uint_uids,
+                    weights=uint_weights,
                 )
                 result = future.result(timeout=120)
             except Exception as e:
