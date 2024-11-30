@@ -186,14 +186,29 @@ class MinerManager:
                     current_mean = np.mean(thresholded_ratings[nonzero_mask])
 
                     if current_std > 0:
-                        # Scale to match expected std dev
-                        target_std = constants.EXPECTED_MAX_STD_ELO_RATING
+                        # Clamp the standard deviation to a maximum value
+                        max_allowed_std = constants.EXPECTED_MAX_STD_ELO_RATING
+                        target_std = min(current_std, max_allowed_std)
                         scale_factor = target_std / current_std
 
-                        # Center, scale, and shift to expected mean
-                        thresholded_ratings[nonzero_mask] = (
+                        # Center around mean and apply scaling
+                        centered_ratings = (
                             thresholded_ratings[nonzero_mask] - current_mean
-                        ) * scale_factor + constants.EXPECTED_MEAN_ELO_RATING
+                        )
+                        scaled_ratings = centered_ratings * scale_factor
+
+                        # Apply sigmoid-like compression to reduce extreme values
+                        compression_factor = 0.5
+                        compressed_ratings = (
+                            np.tanh(scaled_ratings * compression_factor) * target_std
+                        )
+
+                        # Shift back to target mean
+                        thresholded_ratings[nonzero_mask] = (
+                            compressed_ratings + constants.EXPECTED_MEAN_ELO_RATING
+                        )
+
+                        # Apply floor
                         thresholded_ratings[
                             thresholded_ratings < constants.FLOOR_ELO_RATING
                         ] = constants.FLOOR_ELO_RATING
