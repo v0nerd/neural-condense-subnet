@@ -150,6 +150,10 @@ class Validator(ABC):
                     target=self.set_weights_in_background, daemon=True
                 )
                 self.thread_set_weights.start()
+            if not self.thread.is_alive():
+                logger.warning("Validator thread died, restarting...")
+                self.thread = threading.Thread(target=self.run, daemon=True)
+                self.thread.start()
             time.sleep(600)  # Check every 10 minutes
 
     def run_in_background_thread(self):
