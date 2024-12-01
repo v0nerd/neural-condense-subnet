@@ -30,7 +30,7 @@ class ChallengeGenerator:
             convo_config=ConversationSchedulerConfig(
                 n_new_conversations=100, n_previous_conversations=2, max_items=100
             ),
-            refresh_time=15.0,
+            refresh_time=60.0,
         )
         self.synthesizer.start()
         self.start_activation_token = "<START-ACTIVATE-TOKEN>"
