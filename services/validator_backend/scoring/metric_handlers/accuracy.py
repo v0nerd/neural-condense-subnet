@@ -92,8 +92,8 @@ def get_accuracy(completion: str, ground_truth: str, embed_model: AutoModel) -> 
     similarity = (query_embeddings @ passage_embeddings.T) * 100
     similarity_percentage = int(similarity[0][0].item())
     if similarity_percentage < 50:
-        score = 0
-    elif similarity_percentage < 70:
+        score = 0.1
+    elif similarity_percentage < 80:
         score = 0.5
     else:
         score = 1

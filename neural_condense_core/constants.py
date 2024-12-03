@@ -84,7 +84,7 @@ class Constants(BaseModel):
             task="trivial_qa_conversation",
             criterias=["accuracy"],
             rewarding_frequency=1,
-            weight=1,
+            weight=0,
         ),
     ]
 
