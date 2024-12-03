@@ -132,6 +132,7 @@ class Validator(ABC):
                 logger.info("Set weights started.")
                 self.set_weights()
                 logger.info("Set weights finished.")
+                self.resync_metagraph()
             except Exception as e:
                 logger.error(f"Set weights error: {e}")
                 traceback.print_exc()

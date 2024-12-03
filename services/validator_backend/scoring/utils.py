@@ -4,6 +4,8 @@ from .datatypes import (
     BatchedScoringRequest,
     ndarray_to_base64,
 )
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
 
 def unit_test(self):
@@ -54,3 +56,84 @@ def unit_test(self):
         self.get_metrics(request)
     except Exception as e:
         print(f"Error in unit_test: {e}")
+
+
+def generate_answer(
+    model: AutoModelForCausalLM,
+    tokenizer: AutoTokenizer,
+    question_ids: torch.Tensor,
+    cache: DynamicCache,
+    context_length: int,
+    max_new_tokens: int,
+) -> str:
+    """
+    Generate an answer to a question using greedy decoding.
+
+    Parameters
+    ----------
+    question_ids : torch.Tensor
+        The tokenized question.
+    cache : Cache
+        The compressed key-value cache.
+    context_length : int
+        The length of the context.
+    max_new_tokens : int
+        The maximum number of new tokens to generate.
+
+    Returns
+    -------
+    str
+        The generated answer.
+    """
+
+    cache_seq_lengths = [
+        cache.get_seq_length(layer_idx) for layer_idx in range(len(cache))
+    ]
+    position_ids = torch.arange(
+        context_length, context_length + question_ids.shape[1], device=model.device
+    ).unsqueeze(0)
+
+    # if the user doesn't provide a question, skip forward pass
+    outputs = model(
+        input_ids=question_ids.to(model.device),
+        past_key_values=cache,
+        position_ids=position_ids,
+        num_logits_to_keep=1,
+    )
+
+    position_ids = position_ids[:, -1:] + 1
+    generated_ids = [outputs.logits[0, -1].argmax()]
+
+    should_stop_token_ids = model.generation_config.eos_token_id
+    if not isinstance(should_stop_token_ids, list):
+        should_stop_token_ids = [should_stop_token_ids]
+
+    for i in range(max_new_tokens - 1):
+        outputs = model(
+            input_ids=generated_ids[-1].unsqueeze(0).unsqueeze(0),
+            past_key_values=cache,
+            position_ids=position_ids + i,
+        )
+        new_id = outputs.logits[0, -1].argmax()
+        generated_ids.append(new_id)
+        if new_id.item() in should_stop_token_ids:
+            break
+    answer = tokenizer.decode(torch.stack(generated_ids), skip_special_tokens=True)
+
+    key_attr, value_attr = "key_cache", "value_cache"
+
+    setattr(
+        cache,
+        key_attr,
+        [key[:, :, :c] for key, c in zip(getattr(cache, key_attr), cache_seq_lengths)],
+    )
+    setattr(
+        cache,
+        value_attr,
+        [
+            value[:, :, :c]
+            for value, c in zip(getattr(cache, value_attr), cache_seq_lengths)
+        ],
+    )
+
+    return answer

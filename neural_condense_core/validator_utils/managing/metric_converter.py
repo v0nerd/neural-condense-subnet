@@ -6,6 +6,7 @@ class MetricConverter:
         self.converters = {
             "perplexity": self.perplexity_to_score,
             "accuracy": self.accuracy_to_score,
+            "bleu": self.bleu_to_score,
         }
 
     def convert_metrics_to_score(
@@ -43,3 +44,6 @@ class MetricConverter:
             s * tier_config.accelerate_reward_scalar if s is not None else None
             for s in accelerate_metrics
         ]
+
+    def bleu_to_score(self, bleus: list[float]):
+        return bleus

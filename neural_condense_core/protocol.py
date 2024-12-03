@@ -1,6 +1,6 @@
 import re
 from bittensor import Synapse
-from typing import Any
+from typing import Any, List
 import torch
 from transformers import DynamicCache
 import time
@@ -19,7 +19,10 @@ class TextCompressProtocol(Synapse):
     compressed_kv_b64: str = ""
     compressed_kv: Any = None
     compressed_length: int = 0
+
     expected_completion: str = ""
+    messages: List[dict] = []
+    hidden_messages: List[dict] = []
     activation_prompt: str = ""
     target_model: str = ""
     local_filename: str = ""
@@ -50,6 +53,8 @@ class TextCompressProtocol(Synapse):
             "context": self.context,
             "expected_completion": self.expected_completion,
             "activation_prompt": self.activation_prompt,
+            "messages": self.messages,
+            "hidden_messages": self.hidden_messages,
         }
 
     @staticmethod

@@ -110,7 +110,9 @@ class Validator(base.BaseValidator):
             pre_batched_uids = vutils.loop.get_batched_uids(
                 serving_counter, self.miner_manager.metadata
             )
+            logger.info(f"Pre-batched UIDs: {pre_batched_uids}")
             sleep_per_batch = sleep_per_set / len(pre_batched_uids)
+            logger.info(f"Sleep per batch: {sleep_per_batch}")
             for batch_uids in pre_batched_uids:
                 batched_uids = [
                     uid for uid in batch_uids if serving_counter[uid].increment()
@@ -118,6 +120,7 @@ class Validator(base.BaseValidator):
 
                 if len(batched_uids) < 2:
                     continue
+                logger.info(f"Batched UIDs: {batched_uids}")
                 future = self.loop.create_task(
                     self._forward_batch(tier, model_name, batched_uids, tokenizer)
                 )
@@ -145,6 +148,7 @@ class Validator(base.BaseValidator):
         try:
             dendrite = bt.dendrite(self.wallet)
             task_config = vutils.loop.get_task_config()
+            logger.info(f"Task config: {task_config}")
             try:
                 ground_truth_synapse = await vutils.loop.prepare_synapse(
                     challenge_generator=self.challenge_generator,
@@ -158,6 +162,7 @@ class Validator(base.BaseValidator):
                 traceback.print_exc()
                 return
             if not ground_truth_synapse:
+                logger.warning("No ground truth synapse")
                 return
             synapse = ground_truth_synapse.miner_synapse
             k_factor = vutils.loop.get_k_factor(self.miner_manager, batched_uids)
@@ -240,7 +245,17 @@ class Validator(base.BaseValidator):
 
     def set_weights(self):
         """Set weights for miners based on their performance."""
-        self.current_block = self.subtensor.get_current_block()
+        try:
+            self.current_block = self.subtensor.get_current_block()
+        except OSError as e:
+            logger.warning(f"Subtensor not available, reconnecting: {e}")
+            self.subtensor = bt.subtensor(config=self.config)
+            logger.info("Reconnected to subtensor.")
+            self.current_block = self.subtensor.get_current_block()
+        except Exception as e:
+            logger.error(f"Error getting current block: {e}")
+            traceback.print_exc()
+            return
         self.last_update = self.metagraph.last_update[self.uid]
         weights = self.miner_manager.get_normalized_ratings(
             top_percentage=constants.TOP_PERCENTAGE_FOR_ALLOCATING_WEIGHTS
@@ -261,10 +276,10 @@ class Validator(base.BaseValidator):
         ) = bt.utils.weight_utils.convert_weights_and_uids_for_emit(
             uids=processed_weight_uids, weights=processed_weights
         )
-        weight_info = list(zip(uint_uids, uint_weights))
-        weight_info_df = pd.DataFrame(weight_info, columns=["uid", "weight"])
-        logger.info(f"Weight info:\n{weight_info_df.to_markdown()}")
         if self.current_block > self.last_update + constants.SUBNET_TEMPO:
+            weight_info = list(zip(uint_uids, uint_weights))
+            weight_info_df = pd.DataFrame(weight_info, columns=["uid", "weight"])
+            logger.info(f"Weight info:\n{weight_info_df.to_markdown()}")
             logger.info("Actually trying to set weights.")
             try:
                 future = self.set_weights_executor.submit(

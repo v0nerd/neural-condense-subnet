@@ -4,14 +4,14 @@ import io
 import time
 import httpx
 import os
-from tqdm import tqdm
+from rich.progress import track
 from ..executor import THREAD_POOL
 from ..logger import logger
 import asyncio
 
 os.makedirs("tmp", exist_ok=True)
 # Remove all files in the tmp directory
-for file in tqdm(os.listdir("tmp"), desc="Cleaning tmp directory"):
+for file in track(os.listdir("tmp"), description="Cleaning tmp directory"):
     os.remove(os.path.join("tmp", file))
 
 

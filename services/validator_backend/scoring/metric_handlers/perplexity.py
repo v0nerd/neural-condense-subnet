@@ -1,3 +1,4 @@
+# DO NOT USE THIS METRIC FOR NOW
 import torch
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForCausalLM, DynamicCache
@@ -25,7 +26,6 @@ def perplexity(
         return_tensors="pt",
         add_special_tokens=False,
         max_length=max_tokens,
-        **kwargs,
     ).input_ids.to(device=device, dtype=torch.long)
     num_seen_tokens = kv_cache._seen_tokens
     input_ids = torch.cat(

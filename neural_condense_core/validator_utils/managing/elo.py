@@ -48,9 +48,14 @@ class ELOSystem:
                 expected_j = self.expected_score(ratings[j], ratings[i])
                 rating_change_i = k_factor * (S_i - expected_i)
                 rating_change_j = k_factor * (S_j - expected_j)
+
+                # Don't reward for answering failed cases
+                if score_i == 0:
+                    rating_change_i = min(0, rating_change_i)
+                if score_j == 0:
+                    rating_change_j = min(0, rating_change_j)
                 new_ratings[i] += rating_change_i
                 new_ratings[j] += rating_change_j
-
         return new_ratings
 
     def normalize_ratings(

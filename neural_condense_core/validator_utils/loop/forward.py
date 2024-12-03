@@ -10,6 +10,7 @@ from ..managing.miner_manager import MinerManager, ServingCounter, MetadataItem
 from ...constants import SyntheticTaskConfig, TierConfig
 import asyncio
 import os
+import traceback
 
 
 def get_task_config() -> SyntheticTaskConfig:
@@ -51,7 +52,9 @@ async def prepare_synapse(
             max_context_length_in_chars=tier_config.max_context_length_in_chars,
         )
         synapse.target_model = model_name
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error generating challenge: {e}")
+        traceback.print_exc()
         return None
     return synapse
 

@@ -5,13 +5,17 @@ from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     DynamicCache,
+    AutoModel,
 )
+from transformers import pipeline
 import random
 import structlog
 import gc
 from .datatypes import BatchedScoringRequest
 import traceback
 from .metric_handlers import metric_handlers
+from .anti_exploitation.filter_existance import FilterExistanceChecker
+import time
 
 gc.enable()
 structlog.configure(
@@ -20,7 +24,7 @@ structlog.configure(
         structlog.processors.add_log_level,
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
-        structlog.processors.JSONRenderer()
+        structlog.processors.JSONRenderer(),
     ]
 )
 
@@ -41,6 +45,10 @@ class ScoringService:
         self.tokenizer = AutoTokenizer.from_pretrained(
             "Condense-AI/Mistral-7B-Instruct-v0.2"
         )
+        self.embed_model = AutoModel.from_pretrained(
+            "nvidia/NV-Embed-v2", trust_remote_code=True, torch_dtype=self.dtype
+        ).to(device=self.device)
+        self.filter_existance_checker = FilterExistanceChecker()
 
     @torch.no_grad()
     def get_metrics(self, request: BatchedScoringRequest) -> dict[str, float]:
@@ -48,6 +56,12 @@ class ScoringService:
         values = []
         metric_handler = metric_handlers[criteria]["handler"]
         preprocess_batch = metric_handlers[criteria]["preprocess_batch"]
+        positive_chunk, negative_chunk = (
+            self.filter_existance_checker.get_messages_pair(
+                request.ground_truth_request.messages,
+                request.ground_truth_request.hidden_messages,
+            )
+        )
         for miner_response in request.miner_responses:
             try:
                 miner_response.decode()
@@ -56,25 +70,36 @@ class ScoringService:
                         device=self.device, dtype=self.dtype
                     )
                 )
+                start_time = time.time()
                 value = metric_handler(
+                    filter_existance_checker=self.filter_existance_checker,
+                    embed_model=self.embed_model,
                     kv_cache=kv_cache,
                     activation_prompt=request.ground_truth_request.activation_prompt,
                     expected_completion=request.ground_truth_request.expected_completion,
                     tokenizer=self.tokenizer,
                     model=self.model,
-                    max_tokens=4096,
+                    context=request.ground_truth_request.context,
+                    positive_chunk=positive_chunk,
+                    negative_chunk=negative_chunk,
+                )
+                end_time = time.time()
+                logger.info(
+                    "metric_handler_time",
+                    handler_name=metric_handler.__name__,
+                    time_taken=f"{end_time - start_time:.2f}s",
                 )
             except Exception as e:
-                logger.error("metric_handler_error", 
+                logger.error(
+                    "metric_handler_error",
                     error=str(e),
                     handler_name=metric_handler.__name__,
-                    traceback=traceback.format_exc()
+                    traceback=traceback.format_exc(),
                 )
                 value = None
             values.append(value)
-            logger.info("metric_value", 
-                handler_name=metric_handler.__name__,
-                value=value
+            logger.info(
+                "metric_value", handler_name=metric_handler.__name__, value=value
             )
         values = preprocess_batch(values)
         return {"metrics": {criteria: values}}

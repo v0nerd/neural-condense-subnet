@@ -5,6 +5,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 from neural_condense_core import validator_utils
 import traceback
+import asyncio
 
 
 def benchmark_challenger(
@@ -25,19 +26,20 @@ def benchmark_challenger(
     """
     # Load tokenizer and initialize Challenger instance
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    challenger = validator_utils.synthesizing.ChallengeGenerator()
+    challenger = validator_utils.synthesizing.ChallengeGenerator(None)
 
     # Define task types and initialize logs
     tasks = [
         "question_answering",
-        "causal_conversation",
-        "reconstruct_conversation",
+        # "causal_conversation",
+        # "reconstruct_conversation",
         "trivial_qa_conversation",
     ]
     time_logs = {task: 0 for task in tasks}
     error_count = 0
     dataset_items = []
     context_lengths = []
+    token_counts = []
 
     # Start progress bar for total iterations
     total_iterations = n_iterations * len(tasks)
@@ -49,10 +51,12 @@ def benchmark_challenger(
                 start_time = time.time()
 
                 # Generate protocol using Challenger
-                protocol = challenger.generate_challenge(
-                    tokenizer=tokenizer,
-                    task=task,
-                    max_context_length_in_chars=max_characters,
+                protocol = asyncio.run(
+                    challenger.generate_challenge(
+                        tokenizer=tokenizer,
+                        task=task,
+                        max_context_length_in_chars=max_characters,
+                    )
                 )
 
                 # Record details of the generated sample
@@ -69,8 +73,10 @@ def benchmark_challenger(
                 # Track time taken for task
                 time_logs[task] += time.time() - start_time
 
-                # Store context length for analysis
+                # Store context length and token count for analysis
                 context_lengths.append(len(item["context"]))
+                tokens = tokenizer.encode(item["context"])
+                token_counts.append(len(tokens))
 
                 # Add item to dataset items
                 dataset_items.append(item)
@@ -99,33 +105,42 @@ def benchmark_challenger(
     print(f"Error rate: {error_rate:.2%}")
     print("Average processing times (seconds):", avg_time_logs)
 
-    # Analyze context lengths
+    # Analyze context lengths and tokens
     context_lengths = np.array(context_lengths)
+    token_counts = np.array(token_counts)
     mean_length = context_lengths.mean()
     std_length = context_lengths.std()
+    mean_tokens = token_counts.mean()
+    std_tokens = token_counts.std()
 
     print("\nContext length statistics:")
     print(f"Mean: {mean_length:.2f} characters")
     print(f"Standard Deviation: {std_length:.2f} characters")
+    print("\nToken count statistics:")
+    print(f"Mean: {mean_tokens:.2f} tokens")
+    print(f"Standard Deviation: {std_tokens:.2f} tokens")
 
     # Save dataset items to JSON file
     with open("synthetic_samples.json", "w") as file:
         json.dump(dataset_items, file)
 
-    # Return summary of results
+    # Return expanded summary of results
     return {
         "error_count": error_count,
         "error_rate": error_rate,
         "avg_time_per_task": avg_time_logs,
         "context_length_mean": mean_length,
         "context_length_std": std_length,
+        "token_count_mean": mean_tokens,
+        "token_count_std": std_tokens,
     }
 
 
 # Run benchmark
 benchmark_results = benchmark_challenger(
-    n_iterations=10,
-    max_characters=10000,
+    n_iterations=1000,
+    max_characters=20000,
     model_name="Condense-AI/Mistral-7B-Instruct-v0.2",
 )
+
 print("\nBenchmarking completed. Results:", benchmark_results)
