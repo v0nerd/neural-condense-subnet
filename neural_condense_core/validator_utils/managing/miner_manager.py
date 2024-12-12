@@ -71,13 +71,10 @@ class ServingCounter:
     ):
         self.rate_limit = rate_limit
         self.redis_client = redis_client
-        self.key = (
-            constants.DATABASE_CONFIG.redis.serving_counter_key_format.format(
-                tier=tier,
-                uid=uid,
-            )
-            + postfix_key
-        )
+        self.key = constants.DATABASE_CONFIG.redis.serving_counter_key_format.format(
+            tier=tier,
+            uid=uid,
+        ) + str(postfix_key)
 
     def increment(self) -> bool:
         """
