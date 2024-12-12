@@ -1,325 +1,283 @@
-import json
 import bittensor as bt
 import numpy as np
 import httpx
 import pandas as pd
-import threading
 import time
 import asyncio
-from pydantic import BaseModel
 from .metric_converter import MetricConverter
-from .elo import ELOSystem
 from ...common import build_rate_limit
 from ...protocol import Metadata
-from ...constants import constants, TierConfig
+from ...constants import constants
+from .utils import (
+    apply_top_percentage_threshold,
+    standardize_scores,
+    normalize_and_weight_scores,
+)
 from ...logger import logger
+import redis
+from sqlalchemy import create_engine, Column, Integer, String, Float
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+
+Base = declarative_base()
 
 
-class MetadataItem(BaseModel):
+class MinerMetadata(Base):
     """
-    Represents metadata for a miner including their tier and ELO rating.
+    SQLAlchemy model for storing miner metadata.
 
     Attributes:
-        tier (str): The tier level of the miner, defaults to "unknown"
-        elo_rating (float): The ELO rating score of the miner, defaults to initial rating from constants
+        uid (int): Unique identifier for the miner
+        tier (str): Miner's tier level (default: "unknown")
+        score (float): Miner's performance score (default: 0.0)
     """
 
-    tier: str = "unknown"
-    elo_rating: float = constants.INITIAL_ELO_RATING
+    __tablename__ = "miner_metadata"
+
+    uid = Column(Integer, primary_key=True)
+    tier = Column(String, default="unknown")
+    score = Column(Float, default=0.0)
+
+    def __init__(self, uid, tier="unknown", score=0.0):
+        self.uid = uid
+        self.tier = tier
+        self.score = score
+
+    def to_dict(self):
+        """Convert metadata to dictionary format."""
+        return {"uid": self.uid, "tier": self.tier, "score": self.score}
 
 
 class ServingCounter:
     """
-    A counter for rate limiting requests to a miner from this validator.
+    Redis-based rate limiter for miner requests.
+
+    Uses atomic Redis operations to track and limit request rates per miner.
 
     Attributes:
-        rate_limit (int): The maximum number of requests allowed per epoch
-        counter (int): The current number of requests made in the current epoch
-        lock (threading.Lock): Thread lock for synchronizing counter access
+        rate_limit (int): Max requests allowed per epoch
+        redis_client (redis.Redis): Redis connection for distributed counting
+        key (str): Unique Redis key for this counter
+        expire_time (int): TTL for counter keys in Redis
     """
 
-    def __init__(self, rate_limit: int):
-        """
-        Initialize the serving counter.
-
-        Args:
-            rate_limit (int): Maximum number of requests allowed per epoch
-        """
+    def __init__(self, rate_limit: int, uid: int, tier: str, redis_client: redis.Redis):
         self.rate_limit = rate_limit
-        self.counter = 0
-        self.lock = threading.Lock()
+        self.redis_client = redis_client
+        self.key = constants.DATABASE_CONFIG.redis.serving_counter_key_format.format(
+            tier=tier,
+            uid=uid,
+        )
+        self.expire_time = constants.DATABASE_CONFIG.redis.expire_time
 
     def increment(self) -> bool:
         """
-        Increments the counter and checks if rate limit is exceeded.
+        Increment request counter and check rate limit.
+
+        Uses atomic Redis INCR operation and sets expiry on first increment.
 
         Returns:
-            bool: True if counter is within rate limit, False otherwise
+            bool: True if under rate limit, False if exceeded
         """
-        with self.lock:
-            self.counter += 1
-            return self.counter <= self.rate_limit
+        count = self.redis_client.incr(self.key)
+
+        if count == 1:
+            self.redis_client.expire(self.key, self.expire_time)
+
+        if count <= self.rate_limit:
+            return True
+
+        logger.info(f"Rate limit exceeded for {self.key}")
+        return False
 
 
 class MinerManager:
     """
-    Manages metadata and serving counters for miners in the network.
+    Manages miner metadata, scoring and rate limiting.
+
+    Handles:
+    - Miner metadata storage and updates
+    - Performance scoring and normalization
+    - Request rate limiting per miner
+    - Synchronization with validator network
 
     Attributes:
-        validator: The validator instance this manager belongs to
-        wallet: Bittensor wallet for the validator
-        dendrite: Bittensor dendrite for network communication
-        metagraph: Network metagraph containing miner information
-        elo_system (ELOSystem): System for managing ELO ratings
-        default_metadata_items (list): Default metadata fields
+        wallet: Bittensor wallet
+        dendrite: Network communication client
+        metagraph: Network state/topology
         config: Validator configuration
-        metadata (dict): Miner metadata storage
-        state_path (str): Path to save/load state
-        message (str): Random message for signing
-        metric_converter (MetricConverter): Converts metrics to scores
-        serving_counter (dict): Rate limiting counters per tier
+        redis_client: Redis connection
+        session: SQLAlchemy database session
+        metric_converter: Converts raw metrics to scores
+        rate_limit_per_tier: Request limits by tier
     """
 
-    def __init__(self, validator):
-        """
-        Initialize the MinerManager.
-
-        Args:
-            validator: The validator instance this manager belongs to
-        """
-        self.config = validator.config
-        self.uid = validator.uid
-        self.wallet = validator.wallet
+    def __init__(self, uid, wallet, metagraph, config=None):
+        self.is_main_process = bool(config)
+        self.config = config
+        self.uid = uid
+        self.wallet = wallet
         self.dendrite = bt.dendrite(wallet=self.wallet)
-        self.metagraph = validator.metagraph
-        self.elo_system = ELOSystem()
-        self.default_metadata_items = [
-            ("tier", "unknown"),
-        ]
-        self.config = validator.config
-        self.metadata = self._init_metadata()
-        self.state_path = self.config.full_path + "/state.json"
+        self.metagraph = metagraph
+
+        # Initialize Redis
+        redis_config = constants.DATABASE_CONFIG.redis
+        self.redis_client = redis.Redis(
+            host=redis_config.host, port=redis_config.port, db=redis_config.db
+        )
+
+        # Initialize SQLAlchemy
+        self.engine = create_engine(constants.DATABASE_CONFIG.sql.url)
+        Base.metadata.create_all(self.engine)
+        Session = sessionmaker(bind=self.engine)
+        self.session = Session()
+
+        self._init_metadata()
         self.metric_converter = MetricConverter()
         self.rate_limit_per_tier = self.get_rate_limit_per_tier()
         logger.info(f"Rate limit per tier: {self.rate_limit_per_tier}")
-        self.load_state()
+
         self.loop = asyncio.get_event_loop()
         self.loop.run_until_complete(self.sync())
 
-    def update_ratings(
-        self,
-        metrics: dict[str, list[float]],
-        k_factor: int,
-        total_uids: list[int],
-        tier_config: TierConfig,
-    ):
+    def get_metadata(self, uids: list[int] = []) -> dict[int, MinerMetadata]:
         """
-        Updates the ELO ratings of miners based on their performance.
+        Get metadata for specified miner UIDs.
 
         Args:
-            metrics (dict[str, list[float]]): Performance metrics for each miner
-            total_uids (list[int]): UIDs of all miners
-            k_factor (int): ELO K-factor for rating adjustments
-            tier_config (TierConfig): Tier configuration
-        """
-        # Get current ELO ratings for participating miners
-        initial_ratings = [self.metadata[uid].elo_rating for uid in total_uids]
-        performance_scores: dict[str, list[float]] = (
-            self.metric_converter.convert_metrics_to_score(metrics, tier_config)
-        )
-        # Update ELO ratings based on performance scores
-        metric_ratings = []
-        for metric, scores in performance_scores.items():
-            updated_ratings = self.elo_system.update_ratings(
-                initial_ratings, scores, k_factor
-            )
-            metric_ratings.append(updated_ratings)
+            uids: List of miner UIDs to fetch. Empty list returns all miners.
 
-        final_ratings = np.mean(metric_ratings, axis=0)
-        # Update metadata with new ratings and scores
-        for uid, final_rating in zip(total_uids, final_ratings):
-            self.metadata[uid] = MetadataItem(
-                tier=self.metadata[uid].tier,
-                elo_rating=max(constants.FLOOR_ELO_RATING, final_rating),
-            )
-        return final_ratings, initial_ratings
+        Returns:
+            dict: Mapping of UID to miner metadata
+        """
+        query = self.session.query(MinerMetadata)
+        if uids:
+            query = query.filter(MinerMetadata.uid.in_(uids))
+        return {miner.uid: miner for miner in query.all()}
+
+    def update_scores(self, scores: list[float], total_uids: list[int]):
+        """
+        Update miner scores with exponential moving average.
+
+        Args:
+            scores: New performance scores
+            total_uids: UIDs corresponding to scores
+
+        Returns:
+            tuple: Updated scores and previous scores
+        """
+        updated_scores = []
+        previous_scores = []
+
+        for uid, score in zip(total_uids, scores):
+            miner = self.session.query(MinerMetadata).get(uid)
+            previous_scores.append(miner.score)
+
+            # EMA with 0.9 decay factor
+            miner.score = miner.score * 0.9 + score * 0.1
+            miner.score = max(0, miner.score)
+            updated_scores.append(miner.score)
+
+        self.session.commit()
+        return updated_scores, previous_scores
 
     def get_normalized_ratings(self, top_percentage: float = 1.0) -> np.ndarray:
         """
-        Calculate normalized ratings for all miners based on their tier and ELO rating.
+        Calculate normalized ratings across all miners.
+
+        Applies:
+        1. Top percentage thresholding
+        2. Score standardization
+        3. Sigmoid compression
+        4. Tier-based incentive weighting
 
         Args:
-            top_percentage (float): Percentage of miners to consider for normalization
+            top_percentage: Fraction of top miners to consider
 
         Returns:
-            np.ndarray: Array of normalized ratings for all miners
+            np.ndarray: Normalized ratings for all miners
         """
         weights = np.zeros(len(self.metagraph.hotkeys))
-        for tier in constants.TIER_CONFIG.keys():
-            # Get ELO ratings for miners in this tier
-            tier_ratings = []
-            tier_uids = []
 
-            for uid, metadata in self.metadata.items():
-                if metadata.tier == tier:
-                    tier_ratings.append(metadata.elo_rating)
-                    tier_uids.append(uid)
-            uids_ratings = list(zip(tier_uids, tier_ratings))
-            if uids_ratings:
-                # Give zeros to rating of miners not in top_percentage
-                n_top_miners = max(1, int(len(tier_ratings) * top_percentage))
-                top_miners = sorted(uids_ratings, key=lambda x: x[1], reverse=True)[
-                    :n_top_miners
-                ]
-                top_uids, _ = zip(*top_miners)
-                thresholded_ratings = tier_ratings.copy()
-                for i in range(len(tier_ratings)):
-                    if tier_uids[i] not in top_uids:
-                        thresholded_ratings[i] = 0
-
-                thresholded_ratings = np.array(thresholded_ratings)
-
-                # Adjust ratings to match expected mean and standard deviation
-                nonzero_mask = thresholded_ratings > 0
-                if np.any(nonzero_mask):
-                    current_std = np.std(thresholded_ratings[nonzero_mask])
-                    current_mean = np.mean(thresholded_ratings[nonzero_mask])
-
-                    if current_std > 0:
-                        # Clamp the standard deviation to a maximum value
-                        max_allowed_std = constants.EXPECTED_MAX_STD_ELO_RATING
-                        target_std = min(current_std, max_allowed_std)
-                        scale_factor = target_std / current_std
-
-                        # Center around mean and apply scaling
-                        centered_ratings = (
-                            thresholded_ratings[nonzero_mask] - current_mean
-                        )
-                        scaled_ratings = centered_ratings * scale_factor
-
-                        # Apply sigmoid-like compression to reduce extreme values
-                        compression_factor = 0.5
-                        compressed_ratings = (
-                            np.tanh(scaled_ratings * compression_factor) * target_std
-                        )
-
-                        # Shift back to target mean
-                        thresholded_ratings[nonzero_mask] = (
-                            compressed_ratings + constants.EXPECTED_MEAN_ELO_RATING
-                        )
-
-                        # Apply floor
-                        thresholded_ratings[
-                            thresholded_ratings < constants.FLOOR_ELO_RATING
-                        ] = constants.FLOOR_ELO_RATING
-
-                        logger.info(
-                            "adjust_ratings",
-                            tier=tier,
-                            mean=current_mean,
-                            std=current_std,
-                            scale_factor=scale_factor,
-                        )
-
-                data = {
-                    "uids": tier_uids,
-                    "original_ratings": tier_ratings,
-                    "thresholded_ratings": thresholded_ratings,
-                }
-                logger.info(
-                    f"Thresholded Ratings for Tier {tier} (thresholded by {top_percentage}) :\n{pd.DataFrame(data).to_markdown()}"
-                )
-                # Normalize ELO ratings to weights, sum to 1
-                normalized_ratings = self.elo_system.normalize_ratings(
-                    thresholded_ratings
-                )
-
-                # Apply tier incentive percentage
-                tier_weights = (
-                    np.array(normalized_ratings)
-                    * constants.TIER_CONFIG[tier].incentive_percentage
-                )
-
-                # Assign weights to corresponding UIDs
-                for uid, weight in zip(tier_uids, tier_weights):
-                    weights[uid] = weight
+        for tier in constants.TIER_CONFIG:
+            tier_weights = self._get_tier_weights(tier, top_percentage)
+            for uid, weight in tier_weights.items():
+                weights[uid] = weight
 
         return weights
 
-    def load_state(self):
+    def _get_tier_weights(self, tier: str, top_percentage: float) -> dict[int, float]:
         """
-        Load miner metadata state from disk.
-        """
-        try:
-            state = json.load(open(self.state_path, "r"))
-            metadata_items = {
-                int(k): MetadataItem(**v) for k, v in state["metadata"].items()
-            }
-            self.metadata = metadata_items
-            self._log_metadata()
-            logger.info("Loaded state.")
-        except Exception as e:
-            logger.error(f"Failed to load state: {e}")
+        Calculate weights for miners in a specific tier.
 
-    def save_state(self):
-        """
-        Save current miner metadata state to disk.
-        """
-        try:
-            metadata_dict = {k: v.dict() for k, v in self.metadata.items()}
-            state = {"metadata": metadata_dict}
-            json.dump(state, open(self.state_path, "w"))
-            logger.info("Saved state.")
-        except Exception as e:
-            logger.error(f"Failed to save state: {e}")
-
-    def _init_metadata(self):
-        """
-        Initialize metadata for all miners in the network.
+        Args:
+            tier: The tier to calculate weights for
+            top_percentage: Fraction of top miners to consider
 
         Returns:
-            dict: Initial metadata for all miners
+            dict: Mapping of UID to weight for miners in tier
         """
-        metadata = {int(uid): MetadataItem() for uid in self.metagraph.uids}
-        return metadata
+        # Get scores for miners in this tier
+        miners = self.session.query(MinerMetadata).filter_by(tier=tier).all()
+        tier_scores = [m.score for m in miners]
+        tier_uids = [m.uid for m in miners]
+
+        if not tier_scores:
+            return {}
+
+        scores = apply_top_percentage_threshold(tier_scores, tier_uids, top_percentage)
+        scores = standardize_scores(scores, tier)
+        scores = normalize_and_weight_scores(scores, tier)
+
+        return dict(zip(tier_uids, scores))
+
+    def _init_metadata(self):
+        """Initialize metadata entries for all miners."""
+        for uid in self.metagraph.uids:
+            try:
+                self.session.query(MinerMetadata).get(uid)
+            except Exception as e:
+                logger.info(f"Reinitialize uid {uid}, {e}")
+                self.session.add(MinerMetadata(uid=uid))
+        self.session.commit()
 
     async def sync(self):
-        """
-        Synchronize metadata and serving counters for all miners.
-        """
+        """Synchronize metadata and rate limiters."""
         logger.info("Synchronizing metadata and serving counters.")
         self.rate_limit_per_tier = self.get_rate_limit_per_tier()
         logger.info(f"Rate limit per tier: {self.rate_limit_per_tier}")
-        self.metadata = await self._update_metadata()
-        self.serving_counter: dict[str, dict[int, ServingCounter]] = (
-            self._create_serving_counter()
-        )
-        self._log_metadata()
+
+        self.serving_counter = self._create_serving_counter()
+
+        if self.is_main_process:
+            await self._update_metadata()
+            self._log_metadata()
 
     def _log_metadata(self):
-        """
-        Log current miner metadata as a formatted pandas DataFrame.
-        """
-        # Log metadata as pandas dataframe with uid, tier, and elo_rating
-        metadata_dict = {
-            uid: {"tier": m.tier, "elo_rating": m.elo_rating}
-            for uid, m in self.metadata.items()
+        """Log current metadata as formatted DataFrame."""
+        metadata = {
+            m.uid: {"tier": m.tier, "elo_rating": m.score * 100}
+            for m in self.session.query(MinerMetadata).all()
         }
-        metadata_df = pd.DataFrame(metadata_dict).T
-        metadata_df = metadata_df.reset_index()
-        metadata_df.columns = ["uid", "tier", "elo_rating"]
-        logger.info("Metadata:\n" + metadata_df.to_markdown())
+        df = pd.DataFrame(metadata).T.reset_index()
+        df.columns = ["uid", "tier", "elo_rating"]
+        logger.info("Metadata:\n" + df.to_markdown())
 
     async def report_metadata(self):
-        """
-        Report current miner metadata to the validator server.
-        """
-        metadata_dict = {k: v.dict() for k, v in self.metadata.items()}
-        await self.report(metadata_dict, "api/report-metadata")
+        """Report metadata to validator server."""
+        metadata = {
+            m.uid: {"tier": m.tier, "elo_rating": m.score * 100}
+            for m in self.session.query(MinerMetadata).all()
+        }
+        await self.report(metadata, "api/report-metadata")
 
     async def report(self, payload: dict, endpoint: str):
         """
-        Report current miner metadata to the validator server.
+        Send signed report to validator server.
+
+        Args:
+            payload: Data to report
+            endpoint: API endpoint path
         """
         url = f"{self.config.validator.report_url}/{endpoint}"
         nonce = str(time.time_ns())
@@ -341,23 +299,14 @@ class MinerManager:
             )
 
         if response.status_code != 200:
-            logger.error(
-                f"Failed to report to the {endpoint}. Response: {response.text}"
-            )
+            logger.error(f"Failed to report to {endpoint}. Response: {response.text}")
         else:
-            logger.info(f"Reported to the {endpoint}.")
+            logger.info(f"Reported to {endpoint}.")
 
     async def _update_metadata(self):
-        """
-        Update metadata for all miners by querying their status.
-        Does not consume validator's serving counter.
-
-        Returns:
-            dict: Updated metadata for all miners
-        """
+        """Update metadata by querying miner status."""
         synapse = Metadata()
-        metadata = self.metadata.copy()
-        uids = [uid for uid in range(len(self.metagraph.hotkeys))]
+        uids = list(range(len(self.metagraph.hotkeys)))
         axons = [self.metagraph.axons[uid] for uid in uids]
 
         responses = await self.dendrite.forward(
@@ -368,60 +317,54 @@ class MinerManager:
         )
 
         for uid, response in zip(uids, responses):
-            # Keep track of the current tier
-            current_tier = (
-                self.metadata[uid].tier if uid in self.metadata else "unknown"
-            )
+            miner = self.session.query(MinerMetadata).get(uid)
+            if not miner:
+                miner = MinerMetadata(uid=uid)
+                self.session.add(miner)
+
+            current_tier = miner.tier
             new_tier = current_tier
 
-            # Update tier based on response
             if response and response.metadata.get("tier") is not None:
                 new_tier = response.metadata["tier"]
 
-            # Get current or initial ELO rating
-            current_elo = (
-                self.metadata[uid].elo_rating
-                if uid in self.metadata
-                else constants.INITIAL_ELO_RATING
-            )
-
-            # Reset ELO rating if tier changed
             if new_tier != current_tier:
                 logger.info(
-                    f"Tier of uid {uid} changed from {current_tier} to {new_tier}."
+                    f"Tier of uid {uid} changed from {current_tier} to {new_tier}"
                 )
-                current_elo = constants.INITIAL_ELO_RATING
+                miner.score = 0
 
-            metadata[uid] = MetadataItem(tier=new_tier, elo_rating=current_elo)
+            miner.tier = new_tier
 
-        # Update self.metadata with the newly computed metadata
-        self.metadata = metadata
-        logger.info(f"Updated metadata for {len(uids)} uids.")
-        return self.metadata
+        self.session.commit()
+        logger.info(f"Updated metadata for {len(uids)} uids")
 
     def get_rate_limit_per_tier(self):
-        """
-        Get rate limit per tier for the validator.
-        """
-        rate_limit_per_tier = {
+        """Get request rate limits for each tier."""
+        return {
             tier: build_rate_limit(self.metagraph, self.config, tier)[self.uid]
-            for tier in constants.TIER_CONFIG.keys()
+            for tier in constants.TIER_CONFIG
         }
-        return rate_limit_per_tier
 
     def _create_serving_counter(self):
         """
-        Create rate limiting counters for each tier of miners.
+        Create rate limiters for each miner by tier.
 
         Returns:
-            dict: Serving counters organized by tier and UID
+            dict: Nested dict of tier -> uid -> counter
         """
-        tier_group = {tier: {} for tier in constants.TIER_CONFIG.keys()}
-        for uid, metadata in self.metadata.items():
-            tier = metadata.tier
+        counters = {tier: {} for tier in constants.TIER_CONFIG}
+
+        for miner in self.session.query(MinerMetadata).all():
+            tier = miner.tier
             if tier not in constants.TIER_CONFIG:
                 continue
-            if tier not in tier_group:
-                tier_group[tier] = {}
-            tier_group[tier][uid] = ServingCounter(self.rate_limit_per_tier[tier])
-        return tier_group
+
+            counter = ServingCounter(
+                self.rate_limit_per_tier[tier], miner.uid, tier, self.redis_client
+            )
+            if self.is_main_process:
+                counter.redis_client.set(counter.key, 0)
+            counters[tier][miner.uid] = counter
+
+        return counters

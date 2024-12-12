@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List
 import os
 
@@ -21,10 +21,32 @@ class SyntheticTaskConfig(BaseModel):
     weight: float
 
 
-class EloGroup(BaseModel):
-    min_elo: int
-    max_elo: int
-    k_factor: int
+class RedisConfig(BaseModel):
+    """Configuration for Redis connection"""
+
+    host: str = Field(default="localhost")
+    port: int = Field(default=6379)
+    db: int = Field(default=0)
+    expire_time: int = Field(
+        default=3600, description="Default expiration time in seconds"
+    )
+    serving_counter_key_format: str = Field(default="serving_counter:{tier}:{uid}")
+
+
+class SqlConfig(BaseModel):
+    """Configuration for SQL database connection"""
+
+    url: str = Field(
+        default="sqlite:///miner_metadata.db",
+        description="Database URL in SQLAlchemy format",
+    )
+
+
+class DatabaseConfig(BaseModel):
+    """Combined database configuration"""
+
+    redis: RedisConfig = Field(default_factory=RedisConfig)
+    sql: SqlConfig = Field(default_factory=SqlConfig)
 
 
 class Constants(BaseModel):
@@ -35,9 +57,9 @@ class Constants(BaseModel):
             timeout=32,
             accelerate_reward_scalar=0.1,
             supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
-            max_condensed_tokens=1024,
+            max_condensed_tokens=1536,
             min_condensed_tokens=128,
-            max_context_length_in_chars=10000,
+            max_context_length_in_chars=15000,
         ),
         "inference_0": TierConfig(
             incentive_percentage=0.0,
@@ -93,22 +115,29 @@ class Constants(BaseModel):
     SCORING_PER_MINER_PER_EPOCH: int = 1
     SUBNET_TEMPO: int = 360
     MIN_STAKE: int = int(os.environ.get("MIN_STAKE", 10000))
-    RPE_PERCENTAGE_FOR_SYNTHETIC: float = 0.05
+    RPE_PERCENTAGE_FOR_SYNTHETIC: float = 0.1
     BATCH_SIZE: int = 8
     SET_WEIGHTS_TIMEOUT: int = 120
     ORGANIC_CLIENT_URL: str = "https://ncs-client.condenses.ai"
     REPORT_URL: str = "https://report.condenses.ai"
-    INITIAL_ELO_RATING: float = 100.0
-    FLOOR_ELO_RATING: float = 0.0
-    ELO_GROUPS: dict[str, EloGroup] = {
-        "beginner": EloGroup(min_elo=0, max_elo=800, k_factor=24),
-        "intermediate": EloGroup(min_elo=800, max_elo=1600, k_factor=16),
-        "advanced": EloGroup(min_elo=1600, max_elo=3000, k_factor=4),
-    }
     ORGANIC_VERIFY_FREQUENCY: float = 0.1
     TOP_PERCENTAGE_FOR_ALLOCATING_WEIGHTS: float = 0.3
-    EXPECTED_MEAN_ELO_RATING: float = 1000
-    EXPECTED_MAX_STD_ELO_RATING: float = 300
+    EXPECTED_MEAN_SCORE: float = 0.75
+    EXPECTED_MAX_STD_SCORE: float = 0.1
+
+    DATABASE_CONFIG: DatabaseConfig = Field(
+        default_factory=lambda: DatabaseConfig(
+            redis=RedisConfig(
+                host=os.getenv("REDIS_HOST", "localhost"),
+                port=int(os.getenv("REDIS_PORT", 6379)),
+                db=int(os.getenv("REDIS_DB", 0)),
+                expire_time=int(os.getenv("REDIS_EXPIRE_TIME", 3600)),
+            ),
+            sql=SqlConfig(
+                url=os.getenv("SQL_DATABASE_URL", "sqlite:///miner_metadata.db")
+            ),
+        )
+    )
 
     # Adjust values based on NETWORK environment variable
     def __init__(self, **data):

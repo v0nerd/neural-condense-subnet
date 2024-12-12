@@ -2,50 +2,31 @@ from neural_condense_core import (
     base,
     validator_utils as vutils,
     constants,
-    __spec_version__,
     logger,
 )
+from neural_condense_core.protocol import TextCompressProtocol
 import pandas as pd
 import bittensor as bt
 import random
 from transformers import AutoTokenizer
-import numpy as np
 import traceback
 import asyncio
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from concurrent.futures import ThreadPoolExecutor
 import time
 
 
 class Validator(base.BaseValidator):
-    """
-    Validator class that handles validation of miner responses and manages rewards.
-
-    Attributes:
-        tier_config (dict): Configuration for different tiers of miners
-        miner_manager (MinerManager): Manager for handling miner metadata and state
-        challenger (Challenger): Generates validation challenges for miners
-        organic_gate (OrganicGate): Optional gate for handling organic traffic
-    """
-
     def __init__(self):
-        """Initialize the validator with required components and configurations."""
         super().__init__()
-        self.miner_manager = vutils.managing.MinerManager(self)
+        self.miner_manager = vutils.managing.MinerManager(
+            uid=self.uid,
+            wallet=self.wallet,
+            metagraph=self.metagraph,
+            config=self.config,
+        )
         self.challenge_generator = vutils.synthesizing.ChallengeGenerator(
             keypair=self.dendrite.keypair
         )
-
-        if self.config.validator.gate_port:
-            try:
-                self.organic_gate = vutils.monetize.OrganicGate(
-                    miner_manager=self.miner_manager,
-                    wallet=self.wallet,
-                    config=self.config,
-                    metagraph=self.metagraph,
-                )
-                logger.info("Starting organic gate.")
-            except Exception as e:
-                logger.error(f"Starting organic gate error: {e}")
 
         if self.config.validator.use_wandb:
             vutils.loop.initialize_wandb(self.dendrite, self.metagraph, self.uid)
@@ -53,12 +34,12 @@ class Validator(base.BaseValidator):
         self.set_weights_executor = ThreadPoolExecutor(max_workers=1)
 
     async def start_epoch(self):
-        """
-        Main validation loop that processes miners across all tiers.
-        Syncs miner state and runs validation in parallel threads.
-        """
         logger.info("Running epoch.")
         await self.miner_manager.sync()
+        try:
+            await self.miner_manager.report_metadata()
+        except Exception as e:
+            logger.error(f"Failed to report metadata & save-state: {e}")
         tasks = [
             self.loop.create_task(self._forward_tier(tier))
             for tier in constants.TIER_CONFIG
@@ -71,62 +52,73 @@ class Validator(base.BaseValidator):
             logger.error(f"Error running epoch tasks: {e}")
             traceback.print_exc()
 
-        try:
-            await self.miner_manager.report_metadata()
-            self.miner_manager.save_state()
-        except Exception as e:
-            logger.error(f"Failed to report metadata & save-state: {e}")
-
     async def _forward_tier(self, tier: str):
-        """
-        Process validation for a specific tier of miners.
+        try:
+            if constants.TIER_CONFIG[tier].incentive_percentage == 0:
+                logger.info(f"Tier {tier} has no incentive percentage.")
+                return
 
-        Args:
-            tier (str): The tier level to process
-        """
-        if constants.TIER_CONFIG[tier].incentive_percentage == 0:
-            logger.info(f"Tier {tier} has no incentive percentage.")
+            model_name = random.choice(constants.TIER_CONFIG[tier].supporting_models)
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            serving_counter = self.miner_manager.serving_counter.get(tier, {})
+
+            if not serving_counter:
+                logger.info(f"No miners in tier {tier}.")
+                return
+            rate_limit = self.miner_manager.rate_limit_per_tier[tier]
+            n_sets = max(
+                int(rate_limit * constants.RPE_PERCENTAGE_FOR_SYNTHETIC),
+                1,
+            )
+            futures = []
+        except Exception as e:
+            logger.error(f"Error in _forward_tier: {e}")
+            traceback.print_exc()
             return
 
+        task_config = vutils.loop.get_task_config()
         model_name = random.choice(constants.TIER_CONFIG[tier].supporting_models)
         tokenizer = AutoTokenizer.from_pretrained(model_name)
-        serving_counter = self.miner_manager.serving_counter.get(tier, {})
+        ground_truth_synapses = [
+            await vutils.loop.prepare_synapse(
+                challenge_generator=self.challenge_generator,
+                tokenizer=tokenizer,
+                task_config=task_config,
+                tier_config=constants.TIER_CONFIG[tier],
+                model_name=model_name,
+            )
+            for _ in range(n_sets)
+        ]
 
-        if not serving_counter:
-            logger.info(f"No miners in tier {tier}.")
-            return
-        rate_limit = self.miner_manager.rate_limit_per_tier[tier]
-        n_sets = max(
-            int(rate_limit * constants.RPE_PERCENTAGE_FOR_SYNTHETIC),
-            1,
-        )
-        sleep_per_set = constants.EPOCH_LENGTH / n_sets
-        futures = []
+        sleep_per_set = constants.EPOCH_LENGTH / n_sets / 2
 
-        for i in range(n_sets):
+        logger.info(f"Prepared {len(ground_truth_synapses)} ground truth synapses.")
+
+        for i, ground_truth_synapse in enumerate(ground_truth_synapses):
             logger.info(
                 f"Processing set {i}/{n_sets} then sleeping for {sleep_per_set} seconds."
             )
-            pre_batched_uids = vutils.loop.get_batched_uids(
-                serving_counter, self.miner_manager.metadata
-            )
-            logger.info(f"Pre-batched UIDs: {pre_batched_uids}")
-            sleep_per_batch = sleep_per_set / len(pre_batched_uids)
-            logger.info(f"Sleep per batch: {sleep_per_batch}")
-            for batch_uids in pre_batched_uids:
-                batched_uids = [
-                    uid for uid in batch_uids if serving_counter[uid].increment()
-                ][: constants.BATCH_SIZE]
-
-                if len(batched_uids) < 2:
-                    continue
-                logger.info(f"Batched UIDs: {batched_uids}")
+            total_uids = list(serving_counter.keys())
+            random.shuffle(total_uids)
+            batched_uids = [total_uids[i : i + 4] for i in range(0, len(total_uids), 4)]
+            futures = []
+            for uids in batched_uids:
+                logger.info(
+                    "Processing batch",
+                    uids=uids,
+                    sleep=sleep_per_set / len(batched_uids),
+                )
                 future = self.loop.create_task(
-                    self._forward_batch(tier, model_name, batched_uids, tokenizer)
+                    self._forward_batch(
+                        tier,
+                        model_name,
+                        uids,
+                        ground_truth_synapse,
+                        task_config,
+                    )
                 )
                 futures.append(future)
-                await asyncio.sleep(sleep_per_batch)
-
+                await asyncio.sleep(sleep_per_set / len(batched_uids))
         await asyncio.gather(*futures, return_exceptions=True)
 
     async def _forward_batch(
@@ -134,38 +126,13 @@ class Validator(base.BaseValidator):
         tier: str,
         model_name: str,
         batched_uids: list[int],
-        tokenizer: AutoTokenizer,
+        ground_truth_synapse: TextCompressProtocol,
+        task_config,
     ):
-        """
-        Process a batch of miners for validation.
-
-        Args:
-            tier (str): The tier level being processed
-            model_name (str): Name of the model to use for validation
-            batched_uids (list[int]): List of miner UIDs to validate
-            tokenizer: The tokenizer for the selected model
-        """
         try:
             dendrite = bt.dendrite(self.wallet)
-            task_config = vutils.loop.get_task_config()
-            logger.info(f"Task config: {task_config}")
-            try:
-                ground_truth_synapse = await vutils.loop.prepare_synapse(
-                    challenge_generator=self.challenge_generator,
-                    tokenizer=tokenizer,
-                    task_config=task_config,
-                    tier_config=constants.TIER_CONFIG[tier],
-                    model_name=model_name,
-                )
-            except Exception as e:
-                logger.error(f"Error preparing synapse: {e}")
-                traceback.print_exc()
-                return
-            if not ground_truth_synapse:
-                logger.warning("No ground truth synapse")
-                return
             synapse = ground_truth_synapse.miner_synapse
-            k_factor = vutils.loop.get_k_factor(self.miner_manager, batched_uids)
+            logger.info(f"Querying miners {batched_uids}.")
             responses = await vutils.loop.query_miners(
                 dendrite=dendrite,
                 metagraph=self.metagraph,
@@ -178,6 +145,7 @@ class Validator(base.BaseValidator):
                 logger.warning(f"No responses from {batched_uids}.")
                 return
             try:
+                logger.info(f"Validating responses for {batched_uids}.")
                 (
                     valid_responses,
                     valid_uids,
@@ -195,7 +163,7 @@ class Validator(base.BaseValidator):
             try:
                 logger.info("Processing and scoring responses.")
                 start_time = time.time()
-                metrics, total_uids = await vutils.loop.process_and_score_responses(
+                logs, total_uids = await vutils.loop.process_and_score_responses(
                     miner_manager=self.miner_manager,
                     valid_responses=valid_responses,
                     valid_uids=valid_uids,
@@ -204,11 +172,9 @@ class Validator(base.BaseValidator):
                     model_name=model_name,
                     task_config=task_config,
                     tier_config=constants.TIER_CONFIG[tier],
-                    tier=tier,
-                    k_factor=k_factor,
-                    use_wandb=self.config.validator.use_wandb,
                     config=self.config,
                     invalid_reasons=invalid_reasons,
+                    timeout=300,
                 )
                 end_time = time.time()
                 logger.info(
@@ -221,13 +187,13 @@ class Validator(base.BaseValidator):
             batch_information = (
                 f"Batch Metrics - {tier} - {model_name} - {task_config.task}"
             )
-            batch_report_df = vutils.loop.logging.log_as_dataframe(metrics)
+            batch_report_df = vutils.loop.logging.log_as_dataframe(logs)
             logger.info(
                 f"Logging dataframe {batch_information}:\n{batch_report_df.to_markdown()}"
             )
 
             if self.config.validator.use_wandb:
-                vutils.loop.logging.log_wandb(metrics, total_uids, tier=tier)
+                vutils.loop.logging.log_wandb(logs, total_uids, tier=tier)
 
             await self.miner_manager.report(
                 {
@@ -244,7 +210,6 @@ class Validator(base.BaseValidator):
             logger.error(f"Error: {e}")
 
     def set_weights(self):
-        """Set weights for miners based on their performance."""
         try:
             self.current_block = self.subtensor.get_current_block()
         except OSError as e:
@@ -308,4 +273,6 @@ if __name__ == "__main__":
             if not validator.thread_set_weights.is_alive():
                 logger.info("Starting set weights thread.")
                 validator.thread_set_weights.start()
+            else:
+                logger.info("Set weights thread already running.")
             time.sleep(60)

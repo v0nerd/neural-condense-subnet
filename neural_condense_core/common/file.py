@@ -5,14 +5,19 @@ import time
 import httpx
 import os
 from rich.progress import track
-from ..executor import THREAD_POOL
 from ..logger import logger
 import asyncio
+import sys
 
-os.makedirs("tmp", exist_ok=True)
-# Remove all files in the tmp directory
-for file in track(os.listdir("tmp"), description="Cleaning tmp directory"):
-    os.remove(os.path.join("tmp", file))
+# Only clean tmp directory if running as validator
+if (
+    __name__ != "__main__"
+    and os.path.basename(os.path.abspath(sys.argv[0])) == "validator.py"
+):
+    os.makedirs("tmp", exist_ok=True)
+    # Remove all files in the tmp directory
+    for file in track(os.listdir("tmp"), description="Cleaning tmp directory"):
+        os.remove(os.path.join("tmp", file))
 
 
 async def load_npy_from_url(url: str, max_size_mb: int = 1024):
@@ -66,14 +71,9 @@ async def load_npy_from_url(url: str, max_size_mb: int = 1024):
             logger.info(f"Time taken to download: {end_time - start_time:.2f} seconds")
             return filename, end_time - start_time
 
-        # Use run_in_executor with our controlled thread pool
-        loop = asyncio.get_running_loop()
-        filename, download_time = await loop.run_in_executor(
-            THREAD_POOL, _download, url
-        )
+        filename, download_time = await asyncio.to_thread(_download, url)
 
-        # Load and cleanup can also use the controlled executor
-        data = await loop.run_in_executor(THREAD_POOL, _load_and_cleanup, filename)
+        data = _load_and_cleanup(filename)
         return data, filename, download_time, ""
     except Exception as e:
         return None, "", 0, str(e)

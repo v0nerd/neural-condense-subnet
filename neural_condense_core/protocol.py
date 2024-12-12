@@ -3,8 +3,6 @@ from bittensor import Synapse
 from typing import Any, List
 import torch
 from transformers import DynamicCache
-import time
-from .common.base64 import ndarray_to_base64
 from .common.file import load_npy_from_url
 from .constants import TierConfig
 
@@ -28,6 +26,8 @@ class TextCompressProtocol(Synapse):
     local_filename: str = ""
     download_time: float = 0.0
     bonus_compress_size: float = 0.0
+    negative_chunks: List[str] = []
+    positive_chunks: List[str] = []
 
     @property
     def accelerate_score(self) -> float:
@@ -55,6 +55,8 @@ class TextCompressProtocol(Synapse):
             "activation_prompt": self.activation_prompt,
             "messages": self.messages,
             "hidden_messages": self.hidden_messages,
+            "positive_chunks": self.positive_chunks,
+            "negative_chunks": self.negative_chunks,
         }
 
     @staticmethod

@@ -1,6 +1,6 @@
 [project]
 name = "neural-condense-subnet"
-version = "0.0.2"
+version = "0.0.3"
 description = "Neural Condense Subnet - Bittensor"
 authors = [
     {name = "toilaluan"}
@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.10,<4.0"
 dependencies = [
     "transformers==4.45.2",
-    "bittensor==8.4.3",
+    "bittensor==8.4.5",
     "accelerate==1.0.1",
     "datasets==2.21.0",
     "pre-commit==4.0.1",
@@ -30,6 +30,8 @@ dependencies = [
     "torchmetrics>=1.6.0",
     "semantic-text-splitter>=0.19.0",
     "einops==0.8.0",
+    "sqlalchemy>=2.0.36",
+    "openai>=1.57.2",
 ]
 
 [project.urls]

@@ -6,7 +6,7 @@ import wandb
 from ...protocol import TextCompressProtocol
 from ...logger import logger
 from ..synthesizing.challenge_generator import ChallengeGenerator
-from ..managing.miner_manager import MinerManager, ServingCounter, MetadataItem
+from ..managing.miner_manager import MinerManager, ServingCounter, MinerMetadata
 from ...constants import SyntheticTaskConfig, TierConfig
 import asyncio
 import os
@@ -78,12 +78,20 @@ async def query_miners(
     Returns:
         list: Responses from the miners
     """
-    return await dendrite.forward(
-        axons=[metagraph.axons[uid] for uid in uids],
-        synapse=synapse,
-        deserialize=False,
-        timeout=timeout,
-    )
+    batched_uids = [
+        uids[i : i + ncc.constants.BATCH_SIZE]
+        for i in range(0, len(uids), ncc.constants.BATCH_SIZE)
+    ]
+    all_responses = []
+    for batch_uids in batched_uids:
+        responses = await dendrite.forward(
+            axons=[metagraph.axons[uid] for uid in batch_uids],
+            synapse=synapse,
+            deserialize=False,
+            timeout=timeout,
+        )
+        all_responses.extend(responses)
+    return all_responses
 
 
 async def validate_responses(
@@ -132,40 +140,43 @@ async def process_and_score_responses(
     model_name: str,
     task_config: SyntheticTaskConfig,
     tier_config: TierConfig,
-    tier: str,
-    k_factor: int,
-    use_wandb: bool = False,
     config: bt.config = None,
     invalid_reasons: list[str] = [],
     timeout: int = 120,
 ) -> dict[str, list]:
-    metrics = await get_scoring_metrics(
+    accuracies, accelerate_rewards = await get_accuracies(
         valid_responses=valid_responses,
-        invalid_uids=invalid_uids,
         ground_truth_synapse=ground_truth_synapse,
         model_name=model_name,
         task_config=task_config,
         timeout=timeout,
         config=config,
     )
+    scores = [
+        (
+            accu * (1 - tier_config.accelerate_reward_scalar)
+            + accel * tier_config.accelerate_reward_scalar
+        )
+        * (accu > 0)
+        for accu, accel in zip(accuracies, accelerate_rewards)
+    ] + [0] * len(invalid_uids)
     total_uids = valid_uids + invalid_uids
-
-    # Use run_in_threadpool instead of run_in_executor
-    final_ratings, initial_ratings = miner_manager.update_ratings(
-        metrics=metrics,
+    updated_scores, previous_scores = miner_manager.update_scores(
+        scores=scores,
         total_uids=total_uids,
-        k_factor=k_factor,
-        tier_config=tier_config,
     )
-    rating_changes = [
-        f"{int(initial_ratings[i])} -> {int(final_ratings[i])}"
-        for i in range(len(initial_ratings))
+    score_changes = [
+        f"{round(previous_scores[i], 3)} -> {round(updated_scores[i], 3)}"
+        for i in range(len(previous_scores))
     ]
-    reasons = [""] * len(valid_uids) + invalid_reasons
-    metrics["rating_change"] = rating_changes
-    metrics["uid"] = total_uids
-    metrics["invalid_reasons"] = reasons
-    return metrics, total_uids
+    logs = {
+        "uid": total_uids,
+        "accuracy": accuracies + [0] * len(invalid_uids),
+        "accelerate_reward": accelerate_rewards + [0] * len(invalid_uids),
+        "score_change": score_changes,
+        "invalid_reasons": [""] * len(valid_uids) + invalid_reasons,
+    }
+    return logs, total_uids
 
 
 def update_metrics_of_invalid_miners(
@@ -173,26 +184,24 @@ def update_metrics_of_invalid_miners(
     metrics: dict,
 ):
     for metric_name, values in metrics.items():
-        values.extend([None] * len(invalid_uids))
+        values.extend([0] * len(invalid_uids))
     return metrics
 
 
-async def get_scoring_metrics(
+async def get_accuracies(
     valid_responses: list,
-    invalid_uids: list[int],
     ground_truth_synapse: TextCompressProtocol,
     model_name: str,
     task_config: SyntheticTaskConfig,
     timeout: int = 240,
     config: bt.config = None,
-) -> dict[str, list]:
-    # Move the payload creation to an executor
+) -> tuple[list, list]:
     payload = {
         "miner_responses": [{"filename": r.local_filename} for r in valid_responses],
         "ground_truth_request": ground_truth_synapse.validator_payload
         | {"model_name": model_name, "criterias": task_config.criterias},
     }
-    logger.info(f"Sending payload to scoring backend")
+    logger.info("Sending payload to scoring backend")
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(
@@ -214,25 +223,9 @@ async def get_scoring_metrics(
             )
         scoring_response = response.json()
 
-    metrics = scoring_response["metrics"]
-    # Move the accelerate_metrics calculation to an executor as well
-    metrics["accelerate_metrics"] = [r.accelerate_score for r in valid_responses]
-
-    # If update_metrics_of_invalid_miners is CPU-intensive, move it to executor too
-    metrics = update_metrics_of_invalid_miners(invalid_uids, metrics)
-    return metrics
-
-
-def get_k_factor(miner_manager: MinerManager, uids: list[int]) -> tuple[int, float]:
-    mean_elo = sum(miner_manager.metadata[uid].elo_rating for uid in uids) / len(uids)
-
-    if mean_elo < ncc.constants.ELO_GROUPS["beginner"].max_elo:
-        elo_group = ncc.constants.ELO_GROUPS["beginner"]
-    elif mean_elo < ncc.constants.ELO_GROUPS["intermediate"].max_elo:
-        elo_group = ncc.constants.ELO_GROUPS["intermediate"]
-    else:
-        elo_group = ncc.constants.ELO_GROUPS["advanced"]
-    return elo_group.k_factor
+    accuracies = scoring_response["metrics"]["accuracy"]
+    accelerate_rewards = [r.accelerate_score for r in valid_responses]
+    return accuracies, accelerate_rewards
 
 
 def initialize_wandb(dendrite: bt.dendrite, metagraph: bt.metagraph, uid: int):
@@ -258,20 +251,3 @@ def initialize_wandb(dendrite: bt.dendrite, metagraph: bt.metagraph, uid: int):
     except Exception as e:
         logger.error(f"Starting wandb error: {e}")
 
-
-def get_batched_uids(
-    serving_counter: dict[int, ServingCounter], metadata: dict[int, MetadataItem]
-) -> list[list[int]]:
-    uids = list(serving_counter.keys())
-    uids = sorted(uids, key=lambda uid: metadata[uid].elo_rating, reverse=True)
-    n_folds = random.choice([2, 3, 4])
-    group_size = max(2, len(uids) // n_folds)
-    groups = [uids[i : i + group_size] for i in range(0, len(uids), group_size)]
-    for group in groups:
-        random.shuffle(group)
-    uids = [uid for group in groups for uid in group]
-    pre_batched_uids = [
-        uids[i : i + ncc.constants.BATCH_SIZE]
-        for i in range(0, len(uids), ncc.constants.BATCH_SIZE)
-    ]
-    return pre_batched_uids

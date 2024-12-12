@@ -14,7 +14,6 @@ class ConvoGenerator:
         self.model_ids = [
             "chat-llama-3-1-8b",
             "chat-llama-3-1-70b",
-            "chat-llama-3-2-3b",
         ]
         self.url = "https://api.nineteen.ai/v1/chat/completions"
         self.keypair = keypair
@@ -121,15 +120,18 @@ class ConvoGenerator:
         return assistant_messages, total_chars
 
     async def generate_qa_pairs(self, context_seed: str, num_questions: int = 1):
-        question_description = "The question can vary in complexity, ranging from simple tasks like extracting entities or events to more nuanced queries requiring analysis, summarization, or synthesis based on the given context"
-        prompt = f"- Context:\n---\n{context_seed}\n---\n Generate {num_questions} different questions."
-        system_message = (
-            "Your task is to understand the provided context and generate questions about it."
-            f"{question_description}"
-            "Each question should be in the following format: - Question: <question>?\n"
-        )
+        prompt = f"""
+You are an agent that generates questions from provided text.
+Instructions:
+- For provided text, generate {num_questions} questions that can be answered solely by the facts in the text.
+- Return questions in a list format. Example: ["Question 1", "Question 2", "Question 3"]
+
+### Context ###
+```
+{context_seed}
+```
+"""
         messages = [
-            {"role": "system", "content": system_message},
             {"role": "user", "content": prompt},
         ]
         sampling_params = {
@@ -139,14 +141,19 @@ class ConvoGenerator:
             "stream": False,
         }
         text = await self._make_api_call(messages, sampling_params)
-        questions = self._extract_questions(text)
+        questions = self.extract_questions(text)
         if not questions:
             print(text)
         answers = []
         for question in questions:
             sampling_params = {"temperature": 0.4, "max_tokens": 1024, "stream": False}
             text = await self._make_api_call(
-                [{"role": "user", "content": f"{context_seed}\n\n{question}"}],
+                [
+                    {
+                        "role": "user",
+                        "content": f"{context_seed}\n\nBased on above context, answer the question concisely: {question}",
+                    }
+                ],
                 sampling_params,
             )
             answers.append(text)
@@ -155,12 +162,10 @@ class ConvoGenerator:
             total_chars += len(q) + len(a)
         return questions, answers, total_chars
 
-    def _extract_questions(self, text: str, prefix: str = "Question: "):
-        lines = text.split("\n")
-        questions = []
-        for line in lines:
-            if prefix in line:
-                question = line[line.index(prefix) + len(prefix) :].strip()
-                if len(question) > 16:
-                    questions.append(question)
+    def extract_questions(self, completion: str):
+        # Extract based on format ["Question 1", "Question 2", "Question 3"]
+        start_list = completion.find("[")
+        end_list = completion.find("]")
+        questions = completion[start_list + 1 : end_list]
+        questions = eval(questions)
         return questions

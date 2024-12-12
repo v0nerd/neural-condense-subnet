@@ -24,6 +24,7 @@ class OrganicPayload(pydantic.BaseModel):
 
 class OrganicResponse(pydantic.BaseModel):
     compressed_kv_url: str
+    miner_uid: int = -1
 
 
 class RegisterPayload(pydantic.BaseModel):
@@ -34,15 +35,13 @@ class OrganicGate:
     def __init__(
         self,
         miner_manager: MinerManager,
-        wallet,
         config: bt.config,
-        metagraph,
     ):
-        self.metagraph: bt.metagraph.__class__ = metagraph
+        self.metagraph: bt.metagraph.__class__ = miner_manager.metagraph
         self.miner_manager = miner_manager
-        self.wallet = wallet
+        self.wallet = miner_manager.wallet
         self.config = config
-        self.dendrite = bt.dendrite(wallet=wallet)
+        self.dendrite = bt.dendrite(wallet=miner_manager.wallet)
         self.app = FastAPI()
         self.app.add_api_route(
             "/forward",
@@ -58,11 +57,6 @@ class OrganicGate:
         )
         self.client_axon: bt.AxonInfo = None
         self.authentication_key = "".join(random.choices("0123456789abcdef", k=16))
-        self.start_server()
-        self.loop = asyncio.get_event_loop()
-        self.loop.create_task(
-            self._run_function_periodically(self.register_to_client, 60)
-        )
 
     async def _run_function_periodically(self, function, interval):
         while True:
@@ -76,8 +70,14 @@ class OrganicGate:
             await asyncio.sleep(interval)
 
     async def register_to_client(self):
+        logger.info("Registering to client.")
         payload = RegisterPayload(port=self.config.validator.gate_port)
-        await self.call(payload, timeout=12)
+        logger.info(f"Payload: {payload}")
+        try:
+            response = await self.call(payload, timeout=12)
+            logger.info(f"Registration response: {response}")
+        except Exception as e:
+            logger.error(f"Error during registration: {e}")
 
     async def _authenticate(self, request: Request):
         message = request.headers["message"]
@@ -96,7 +96,6 @@ class OrganicGate:
             logger.info(f"Context: {request.context[:100]}...")
             logger.info(f"Tier: {request.tier}")
             logger.info(f"Target model: {request.target_model}")
-
             targeted_uid = None
             if request.miner_uid != -1:
                 counter = self.miner_manager.serving_counter[request.tier][
@@ -111,10 +110,10 @@ class OrganicGate:
                         detail="Miner is under rate limit.",
                     )
             else:
-                # Get miners in the requested tier sorted by ELO rating
+                metadata = self.miner_manager.get_metadata()
                 tier_miners = [
-                    (uid, metadata.elo_rating)
-                    for uid, metadata in self.miner_manager.metadata.items()
+                    (uid, metadata.score)
+                    for uid, metadata in metadata.items()
                     if metadata.tier == request.tier
                 ]
                 tier_miners.sort(key=lambda x: x[1], reverse=True)
@@ -138,20 +137,23 @@ class OrganicGate:
                     detail="No miners available.",
                 )
             target_axon = self.metagraph.axons[targeted_uid]
-
             response: TextCompressProtocol = await self.dendrite.forward(
                 axons=target_axon,
                 synapse=synapse,
                 timeout=constants.TIER_CONFIG[request.tier].timeout,
                 deserialize=False,
             )
-            asyncio.create_task(self._organic_validating(response, request.tier))
-            logger.info(f"Compressed to url: {response.compressed_kv_url}")
+            # asyncio.create_task(self._organic_validating(response, request.tier))
+            logger.info(
+                f"Compressed to url: {response.compressed_kv_url}. Process time: {response.dendrite.process_time}"
+            )
         except Exception as e:
             logger.error(f"Error: {e}")
             raise HTTPException(status_code=503, detail="Validator error.")
 
-        return OrganicResponse(compressed_kv_url=response.compressed_kv_url)
+        return OrganicResponse(
+            compressed_kv_url=response.compressed_kv_url, miner_uid=targeted_uid
+        )
 
     async def _organic_validating(self, response, tier):
         if random.random() < constants.ORGANIC_VERIFY_FREQUENCY:
@@ -162,16 +164,29 @@ class OrganicGate:
             if not is_valid:
                 logger.warning(f"Invalid response: {reason}")
 
-            # TODO: Update miner's ELO rating
+            # TODO: Update miner's score
 
     def start_server(self):
         self.executor = ThreadPoolExecutor(max_workers=1)
-        self.executor.submit(
-            uvicorn.run,
-            self.app,
-            host="0.0.0.0",
-            port=self.config.validator.gate_port,
-        )
+
+        async def startup():
+            config = uvicorn.Config(
+                self.app,
+                host="0.0.0.0",
+                port=self.config.validator.gate_port,
+                loop="asyncio",
+            )
+            server = uvicorn.Server(config)
+            await server.serve()
+
+        async def run_all():
+            registration_task = self._run_function_periodically(
+                self.register_to_client, 60
+            )
+            server_task = startup()
+            await asyncio.gather(registration_task, server_task)
+
+        asyncio.run(run_all())
 
     async def get_self(self):
         return self

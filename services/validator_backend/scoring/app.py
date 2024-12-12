@@ -5,9 +5,8 @@ from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     DynamicCache,
-    AutoModel,
+    TextGenerationPipeline,
 )
-from transformers import pipeline
 import random
 import structlog
 import gc
@@ -45,22 +44,37 @@ class ScoringService:
         self.tokenizer = AutoTokenizer.from_pretrained(
             "Condense-AI/Mistral-7B-Instruct-v0.2"
         )
-        self.embed_model = AutoModel.from_pretrained(
-            "nvidia/NV-Embed-v2", trust_remote_code=True, torch_dtype=self.dtype
-        ).to(device=self.device)
+
+        j_tokenizer = AutoTokenizer.from_pretrained(
+            "upstage/solar-pro-preview-instruct"
+        )
+        j_model = AutoModelForCausalLM.from_pretrained(
+            "upstage/solar-pro-preview-instruct",
+            torch_dtype=self.dtype,
+            trust_remote_code=True,
+        )
+        self.judge_pipeline = TextGenerationPipeline(
+            model=j_model,
+            tokenizer=j_tokenizer,
+            device=self.device,
+            torch_dtype=self.dtype,
+        )
         self.filter_existance_checker = FilterExistanceChecker()
 
     @torch.no_grad()
     def get_metrics(self, request: BatchedScoringRequest) -> dict[str, float]:
+        logger.info("Received request")
         criteria = random.choice(request.ground_truth_request.criterias)
         values = []
         metric_handler = metric_handlers[criteria]["handler"]
         preprocess_batch = metric_handlers[criteria]["preprocess_batch"]
-        positive_chunk, negative_chunk = (
-            self.filter_existance_checker.get_messages_pair(
-                request.ground_truth_request.messages,
-                request.ground_truth_request.hidden_messages,
-            )
+        logger.info(
+            "positive_chunks",
+            positive_chunks=request.ground_truth_request.positive_chunks,
+        )
+        logger.info(
+            "negative_chunks",
+            negative_chunks=request.ground_truth_request.negative_chunks,
         )
         for miner_response in request.miner_responses:
             try:
@@ -73,15 +87,11 @@ class ScoringService:
                 start_time = time.time()
                 value = metric_handler(
                     filter_existance_checker=self.filter_existance_checker,
-                    embed_model=self.embed_model,
                     kv_cache=kv_cache,
-                    activation_prompt=request.ground_truth_request.activation_prompt,
-                    expected_completion=request.ground_truth_request.expected_completion,
-                    tokenizer=self.tokenizer,
                     model=self.model,
-                    context=request.ground_truth_request.context,
-                    positive_chunk=positive_chunk,
-                    negative_chunk=negative_chunk,
+                    tokenizer=self.tokenizer,
+                    ground_truth_request=request.ground_truth_request,
+                    judge_pipeline=self.judge_pipeline,
                 )
                 end_time = time.time()
                 logger.info(
