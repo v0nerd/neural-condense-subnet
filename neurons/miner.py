@@ -32,6 +32,7 @@ class Miner(ncc.base.BaseMiner):
                 uid=uid,
                 tier=self.config.miner.tier,
                 redis_client=self.redis,
+                postfix_key=self.config.axon.port,
             )
             for uid, rate_limit in ncc.common.build_rate_limit(
                 self.metagraph, self.config, tier=self.config.miner.tier

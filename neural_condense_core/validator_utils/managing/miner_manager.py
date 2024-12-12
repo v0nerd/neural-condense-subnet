@@ -61,12 +61,22 @@ class ServingCounter:
         expire_time (int): TTL for counter keys in Redis
     """
 
-    def __init__(self, rate_limit: int, uid: int, tier: str, redis_client: redis.Redis):
+    def __init__(
+        self,
+        rate_limit: int,
+        uid: int,
+        tier: str,
+        redis_client: redis.Redis,
+        postfix_key: str = "",
+    ):
         self.rate_limit = rate_limit
         self.redis_client = redis_client
-        self.key = constants.DATABASE_CONFIG.redis.serving_counter_key_format.format(
-            tier=tier,
-            uid=uid,
+        self.key = (
+            constants.DATABASE_CONFIG.redis.serving_counter_key_format.format(
+                tier=tier,
+                uid=uid,
+            )
+            + postfix_key
         )
 
     def increment(self) -> bool:
