@@ -4,6 +4,7 @@ from neural_condense_core import (
     constants,
     logger,
 )
+from neural_condense_core.common import clean_tmp_directory
 from neural_condense_core.protocol import TextCompressProtocol
 import pandas as pd
 import bittensor as bt
@@ -36,6 +37,7 @@ class Validator(base.BaseValidator):
         self.metadata_interval = 600  # 10 minutes in seconds
 
     async def start_epoch(self):
+        clean_tmp_directory()
         logger.info("Running epoch.")
         await self.miner_manager.sync()
 
