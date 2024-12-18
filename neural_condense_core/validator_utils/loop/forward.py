@@ -47,7 +47,7 @@ async def prepare_synapse(
     """
     try:
         synapse = await challenge_generator.generate_challenge(
-            tokenizer=tokenizer,
+            model_name=model_name,
             task=task_config.task,
             max_context_length_in_chars=tier_config.max_context_length_in_chars,
         )
@@ -196,11 +196,12 @@ async def get_accuracies(
     timeout: int = 240,
     config: bt.config = None,
 ) -> tuple[list, list]:
-    payload = {
-        "miner_responses": [{"filename": r.local_filename} for r in valid_responses],
-        "ground_truth_request": ground_truth_synapse.validator_payload
-        | {"model_name": model_name, "criterias": task_config.criterias},
-    }
+    payload = TextCompressProtocol.get_scoring_payload(
+        responses=valid_responses,
+        ground_truth_synapse=ground_truth_synapse,
+        target_model=model_name,
+        criterias=task_config.criterias,
+    ).model_dump()
     logger.info("Sending payload to scoring backend")
     async with httpx.AsyncClient() as client:
         try:
@@ -213,9 +214,11 @@ async def get_accuracies(
             logger.error(f"Error sending payload to scoring backend: {e}")
         for r in valid_responses:
             try:
-                os.remove(r.local_filename)
+                os.remove(r.util_data.local_filename)
             except Exception as e:
-                logger.error(f"Error removing local file {r.local_filename}: {e}")
+                logger.error(
+                    f"Error removing local file {r.util_data.local_filename}: {e}"
+                )
         logger.info("Removed all local files")
         if response.status_code != 200:
             raise Exception(

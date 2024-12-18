@@ -1,6 +1,22 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Dict
 import os
+
+
+class ChatTemplate(BaseModel):
+    # Example of Mistral-7B-Instruct-v0.2
+    bos_token: str = "<s>"
+    eos_token: str = "</s>"
+    user_start_token: str = "[INST]"
+    user_end_token: str = "[/INST]"
+    assistant_start_token: str = ""  # No specific start token for the assistant
+    assistant_end_token: str = ""  # No specific end token for the assistant
+
+    def apply_context_template(self, context: str):
+        return f"{self.bos_token} {self.user_start_token} {context}"
+
+    def apply_question_template(self, question: str):
+        return f"\n\n{question} {self.user_end_token} {self.assistant_start_token}"
 
 
 class TierConfig(BaseModel):
@@ -121,9 +137,7 @@ class Constants(BaseModel):
     ORGANIC_CLIENT_URL: str = "https://ncs-client.condenses.ai"
     REPORT_URL: str = "https://report.condenses.ai"
     ORGANIC_VERIFY_FREQUENCY: float = 0.1
-    TOP_PERCENTAGE_FOR_ALLOCATING_WEIGHTS: float = 0.3
-    EXPECTED_MEAN_SCORE: float = 0.75
-    EXPECTED_MAX_STD_SCORE: float = 0.1
+    TOP_PERCENTAGE_FOR_ALLOCATING_WEIGHTS: float = 0.45
 
     DATABASE_CONFIG: DatabaseConfig = Field(
         default_factory=lambda: DatabaseConfig(
@@ -138,6 +152,17 @@ class Constants(BaseModel):
             ),
         )
     )
+
+    CHAT_TEMPLATES: Dict[str, ChatTemplate] = {
+        "Mistral-7B-Instruct-v0.2": ChatTemplate(
+            bos_token="<s>",
+            eos_token="</s>",
+            user_start_token="[INST]",
+            user_end_token="[/INST]",
+            assistant_start_token="",
+            assistant_end_token="",
+        ),
+    }
 
     # Adjust values based on NETWORK environment variable
     def __init__(self, **data):
