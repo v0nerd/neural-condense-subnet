@@ -5,13 +5,13 @@ import asyncio
 import bittensor as bt
 import uvicorn
 from concurrent.futures import ThreadPoolExecutor
-import random
 import httpx
 import time
 from ...constants import constants
 from ...protocol import TextCompressProtocol
 from ..managing import MinerManager
 from ...logger import logger
+import secrets
 
 
 class OrganicPayload(pydantic.BaseModel):
@@ -56,7 +56,7 @@ class OrganicGate:
             dependencies=[Depends(self.get_self)],
         )
         self.client_axon: bt.AxonInfo = None
-        self.authentication_key = "".join(random.choices("0123456789abcdef", k=16))
+        self.authentication_key = "".join(secrets.SystemRandom().choices("0123456789abcdef", k=16))
 
     async def _run_function_periodically(self, function, interval):
         while True:
@@ -121,7 +121,7 @@ class OrganicGate:
                 # Try top miners until we find one under rate limit
                 top_k = max(1, int(len(tier_miners) * request.top_incentive))
                 top_miners = tier_miners[:top_k]
-                random.shuffle(top_miners)  # Randomize among top performers
+                secrets.SystemRandom().shuffle(top_miners)  # Randomize among top performers
                 logger.info(f"Top {top_k} miners: {top_miners}")
 
                 for uid, _ in top_miners:
@@ -156,7 +156,7 @@ class OrganicGate:
         )
 
     async def _organic_validating(self, response, tier):
-        if random.random() < constants.ORGANIC_VERIFY_FREQUENCY:
+        if secrets.SystemRandom().random() < constants.ORGANIC_VERIFY_FREQUENCY:
             is_valid, reason = await TextCompressProtocol.verify(
                 response, constants.TIER_CONFIG[tier]
             )

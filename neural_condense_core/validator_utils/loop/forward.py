@@ -1,6 +1,5 @@
 import neural_condense_core as ncc
 import bittensor as bt
-import random
 import httpx
 import wandb
 from ...protocol import TextCompressProtocol
@@ -11,6 +10,7 @@ from ...constants import SyntheticTaskConfig, TierConfig
 import asyncio
 import os
 import traceback
+import secrets
 
 
 def get_task_config() -> SyntheticTaskConfig:
@@ -20,8 +20,7 @@ def get_task_config() -> SyntheticTaskConfig:
     Returns:
         SyntheticTaskConfig: The selected task configuration
     """
-    return random.choices(
-        ncc.constants.SYNTHETIC_TASK_CONFIG,
+    return secrets.SystemRandom().choices(ncc.constants.SYNTHETIC_TASK_CONFIG,
         weights=[t.weight for t in ncc.constants.SYNTHETIC_TASK_CONFIG],
     )[0]
 
@@ -234,7 +233,7 @@ async def get_accuracies(
 def initialize_wandb(dendrite: bt.dendrite, metagraph: bt.metagraph, uid: int):
     try:
         message = "incentivized-decentralzied-condensed-ai" + "-".join(
-            random.choices("0123456789abcdef", k=16)
+            secrets.SystemRandom().choices("0123456789abcdef", k=16)
         )
         signature = f"0x{dendrite.keypair.sign(message).hex()}"
         wandb.init(

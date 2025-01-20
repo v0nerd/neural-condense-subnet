@@ -4,13 +4,13 @@ import substrateinterface as st
 from .scheduler import Scheduler
 from .convo_generator import ConvoGenerator
 from .schemas import QASchedulerConfig
-import random
 import os
 from typing import Tuple, List
 from ...protocol import TextCompressProtocol
 from .filter_chunker import FilterExistanceChecker
 from ...constants import constants, ChatTemplate
 from .utils import retry
+import secrets
 
 CORCEL_API_KEY = os.getenv("CORCEL_API_KEY")
 CORCEL_BASE_URL = os.getenv(
@@ -75,8 +75,8 @@ class ChallengeGenerator:
             questions = qa_item.questions
             answers = qa_item.answers
             question_answer_pairs.extend(list(zip(questions, answers)))
-        random.shuffle(question_answer_pairs)
-        challenge_qa_pairs = random.sample(question_answer_pairs, 5)
+        secrets.SystemRandom().shuffle(question_answer_pairs)
+        challenge_qa_pairs = secrets.SystemRandom().sample(question_answer_pairs, 5)
         challenge_questions = [qa_pair[0] for qa_pair in challenge_qa_pairs]
         challenge_answers = [qa_pair[1] for qa_pair in challenge_qa_pairs]
 
