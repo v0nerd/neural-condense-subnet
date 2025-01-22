@@ -26,6 +26,8 @@ class TierConfig(BaseModel):
     supporting_models: List[str]
     max_condensed_tokens: int
     min_condensed_tokens: int
+    max_compress_rate: float = 1.0
+    min_compress_rate: float = 0.1
     max_context_length_in_chars: int
     accelerate_reward_scalar: float
 
@@ -68,7 +70,7 @@ class DatabaseConfig(BaseModel):
 class Constants(BaseModel):
     TIER_CONFIG: dict[str, TierConfig] = {
         "research": TierConfig(
-            incentive_percentage=1.0,
+            incentive_percentage=0.6,
             requests_per_epoch=256,
             timeout=32,
             accelerate_reward_scalar=0.1,
@@ -77,25 +79,17 @@ class Constants(BaseModel):
             min_condensed_tokens=128,
             max_context_length_in_chars=15000,
         ),
-        "inference_0": TierConfig(
-            incentive_percentage=0.0,
-            requests_per_epoch=1024,
-            timeout=8,
+        "universal": TierConfig(
+            incentive_percentage=0.4,
+            requests_per_epoch=256,
+            timeout=16,
             accelerate_reward_scalar=0.1,
-            supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
-            max_condensed_tokens=1024,
-            min_condensed_tokens=128,
+            supporting_models=["unsloth/Llama-3.1-8B-Instruct"],
+            max_condensed_tokens=-1,
+            min_condensed_tokens=-1,
             max_context_length_in_chars=15000,
-        ),
-        "inference_1": TierConfig(
-            incentive_percentage=0.0,
-            requests_per_epoch=1024,
-            timeout=8,
-            accelerate_reward_scalar=0.1,
-            supporting_models=["Condense-AI/Mistral-7B-Instruct-v0.2"],
-            max_condensed_tokens=2048,
-            min_condensed_tokens=128,
-            max_context_length_in_chars=20000,
+            max_compress_rate=0.8,
+            min_compress_rate=0.1,
         ),
     }
 
@@ -137,7 +131,7 @@ class Constants(BaseModel):
     ORGANIC_CLIENT_URL: str = "https://ncs-client.condenses.ai"
     REPORT_URL: str = "https://report.condenses.ai"
     ORGANIC_VERIFY_FREQUENCY: float = 0.1
-    TOP_PERCENTAGE_FOR_ALLOCATING_WEIGHTS: float = 0.45
+    TOP_PERCENTAGE_FOR_ALLOCATING_WEIGHTS: float = 1.0
 
     DATABASE_CONFIG: DatabaseConfig = Field(
         default_factory=lambda: DatabaseConfig(
