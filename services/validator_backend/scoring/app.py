@@ -7,7 +7,6 @@ from transformers import (
     DynamicCache,
     TextGenerationPipeline,
 )
-import random
 import structlog
 import gc
 from neural_condense_core.protocol import BatchedScoringRequest
@@ -17,6 +16,7 @@ from .anti_exploitation.filter_existance import FilterExistanceChecker
 import time
 import numpy as np
 import io
+import secrets
 
 gc.enable()
 
@@ -63,7 +63,7 @@ class ScoringService:
     @torch.no_grad()
     def get_metrics(self, request: BatchedScoringRequest) -> dict[str, float]:
         logger.info("Received request")
-        criteria = random.choice(request.criterias)
+        criteria = secrets.choice(request.criterias)
         values = []
         metric_handler = metric_handlers[criteria]["handler"]
         preprocess_batch = metric_handlers[criteria]["preprocess_batch"]

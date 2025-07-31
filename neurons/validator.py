@@ -8,12 +8,12 @@ from neural_condense_core.common import clean_tmp_directory
 from neural_condense_core.protocol import TextCompressProtocol
 import pandas as pd
 import bittensor as bt
-import random
 from transformers import AutoTokenizer
 import traceback
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import time
+import secrets
 
 
 class Validator(base.BaseValidator):
@@ -67,7 +67,7 @@ class Validator(base.BaseValidator):
             if constants.TIER_CONFIG[tier].incentive_percentage == 0:
                 logger.info(f"Tier {tier} has no incentive percentage.")
                 return
-            model_name = random.choice(constants.TIER_CONFIG[tier].supporting_models)
+            model_name = secrets.choice(constants.TIER_CONFIG[tier].supporting_models)
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             serving_counter = self.miner_manager.serving_counter.get(tier, {})
 
@@ -86,7 +86,7 @@ class Validator(base.BaseValidator):
             return
 
         task_config = vutils.loop.get_task_config()
-        model_name = random.choice(constants.TIER_CONFIG[tier].supporting_models)
+        model_name = secrets.choice(constants.TIER_CONFIG[tier].supporting_models)
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         ground_truth_synapses = [
             await vutils.loop.prepare_synapse(
@@ -114,7 +114,7 @@ class Validator(base.BaseValidator):
             )
             total_uids = list(serving_counter.keys())
             logger.info(f"Total uids: {total_uids}")
-            random.shuffle(total_uids)
+            secrets.SystemRandom().shuffle(total_uids)
             batched_uids = [total_uids[i : i + 4] for i in range(0, len(total_uids), 4)]
 
             for uids in batched_uids:

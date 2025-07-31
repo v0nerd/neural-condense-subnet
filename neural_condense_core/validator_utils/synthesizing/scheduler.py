@@ -1,6 +1,5 @@
 import redis
 from typing import Optional, List
-import random
 from datasets import load_dataset
 from .convo_generator import ConvoGenerator
 from .custom_dataset_loaders import load_context_datasets
@@ -12,6 +11,7 @@ from ...constants import constants
 import time
 from ...logger import logger
 import asyncio
+import secrets
 
 
 class Scheduler:
@@ -49,7 +49,7 @@ class Scheduler:
         logger.info(f"✅ Prefilled QA: {self.redis.scard(self.qa_key)} items.")
 
     def _get_next_context_seed(self):
-        ds = random.choice(self.context_datasets)
+        ds = secrets.choice(self.context_datasets)
         item = next(ds)
         return item["context"]
 
