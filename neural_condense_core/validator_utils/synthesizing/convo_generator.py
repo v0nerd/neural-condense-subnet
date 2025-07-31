@@ -2,7 +2,7 @@ from typing import Dict, List, Optional
 import httpx
 import substrateinterface as st
 import time
-import random
+import secrets
 
 
 class ConvoGenerator:
@@ -41,7 +41,7 @@ class ConvoGenerator:
 
     async def _make_api_call(self, messages, sampling_params):
         payload = sampling_params | {
-            "model": random.choice(self.model_ids),
+            "model": secrets.choice(self.model_ids),
             "messages": messages,
         }
         response = await self.client.post(

@@ -1,7 +1,7 @@
 from datasets import load_dataset
 from typing import Tuple
-import random
 from semantic_text_splitter import TextSplitter
+import secrets
 
 
 class FilterExistanceChecker:
@@ -30,9 +30,8 @@ class FilterExistanceChecker:
         # Test on positive case (text from conversation)
         chunks = self.splitter.chunks(context)
         # Get random 2 chunks
-        positive_chunks = random.sample(chunks, 2)
+        positive_chunks = secrets.SystemRandom().sample(chunks, 2)
         # Test on negative case (text not from conversation)
-        negative_chunks = random.sample(
-            self.splitter.chunks(self._get_negative_message()), 2
+        negative_chunks = secrets.SystemRandom().sample(self.splitter.chunks(self._get_negative_message()), 2
         )
         return positive_chunks, negative_chunks
